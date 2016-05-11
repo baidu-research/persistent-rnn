@@ -1,0 +1,466 @@
+#pragma once
+
+// Persistent RNN Includes
+#include <prnn/detail/array.h>
+#include <prnn/detail/array_view.h>
+#include <prnn/detail/fixed_point.h>
+
+#include <prnn/detail/cuda.h>
+
+// Standard Library Includes
+#include <cstdint>
+
+namespace recurrent {
+namespace gpu {
+namespace persistent {
+
+typedef int32_t index_t;
+
+template<
+    index_t StreamingMultiprocessors = 24,
+    index_t GridTileRows = 1088,
+    index_t GridTileColumns = 1088,
+    index_t BlockTileRows = 224,
+    index_t BlockTileColumns = 224,
+    index_t ThreadTileRows = 14,
+    index_t ThreadTileColumns = 14,
+    bool    Reverse = false>
+class TileConfig {
+public:
+    enum {
+        STREAMING_MULTIPROCESSORS = StreamingMultiprocessors
+    };
+
+    enum {
+        GRID_TILE_ROWS    = GridTileRows,
+        GRID_TILE_COLUMNS = GridTileColumns
+    };
+
+    enum {
+        BLOCK_TILE_ROWS    = BlockTileRows,
+        BLOCK_TILE_COLUMNS = BlockTileColumns
+    };
+
+    enum {
+        THREAD_TILE_ROWS    = ThreadTileRows,
+        THREAD_TILE_COLUMNS = ThreadTileColumns
+    };
+
+    enum {
+        THREAD_TILE_SIZE = THREAD_TILE_ROWS * THREAD_TILE_COLUMNS,
+        BLOCK_TILE_SIZE  = BLOCK_TILE_ROWS  * BLOCK_TILE_COLUMNS,
+        GRID_TILE_SIZE   = GRID_TILE_ROWS   * GRID_TILE_COLUMNS
+    };
+
+    enum {
+        THREADS_PER_BLOCK = (BLOCK_TILE_SIZE + THREAD_TILE_SIZE - 1) / THREAD_TILE_SIZE
+    };
+
+    enum {
+        BLOCKS_PER_GRID = (GRID_TILE_SIZE + BLOCK_TILE_SIZE - 1) / BLOCK_TILE_SIZE
+    };
+
+    enum {
+        THREADS_PER_ROW = BLOCK_TILE_COLUMNS / THREAD_TILE_COLUMNS
+    };
+
+    enum {
+        THREADS_PER_COLUMN = BLOCK_TILE_ROWS / THREAD_TILE_ROWS
+    };
+
+    enum {
+        BLOCKS_PER_SM = (BLOCKS_PER_GRID + STREAMING_MULTIPROCESSORS - 1) /
+            STREAMING_MULTIPROCESSORS
+    };
+
+    enum {
+        REVERSE = Reverse
+    };
+
+};
+
+class None {};
+
+__device__ constexpr index_t get_next_power_of_two(
+        index_t value,
+        index_t maxb = sizeof(index_t)*8,
+        index_t curb = 1
+        ) {
+    return maxb <= curb
+            ? value
+            : get_next_power_of_two( ((value-1) | ((value-1)>>curb))+1, maxb, curb << 1 )
+            ;
+}
+
+__device__ constexpr index_t get_min(index_t left, index_t right) {
+    return left < right ? left : right;
+}
+
+__device__ constexpr index_t get_log2(index_t n, index_t p = 0) {
+    return (n <= 1) ? p : get_log2(n / 2, p + 1);
+}
+
+__device__ constexpr index_t evenly_divisible(index_t n, index_t d) {
+    return n % d == 0 ? d : evenly_divisible(n, d/2);
+}
+
+template<int bytes>
+class GetAlignedType
+{
+public:
+    typedef uint8_t type[bytes];
+};
+
+template<>
+class GetAlignedType<8>
+{
+public:
+    typedef float2 type;
+};
+
+template<>
+class GetAlignedType<16>
+{
+public:
+    typedef float4 type;
+};
+
+template<int bytes>
+class GetIntType
+{
+public:
+    typedef int64_t type;
+};
+
+template<>
+class GetIntType<2>
+{
+public:
+    typedef int16_t type;
+};
+
+template<>
+class GetIntType<4>
+{
+public:
+    typedef int32_t type;
+};
+
+template<typename T>
+class GetSIMD
+{
+public:
+    enum {
+        value = 1
+    };
+};
+
+template<>
+class GetSIMD<float16>
+{
+public:
+    enum {
+        value = 2
+    };
+};
+
+template<
+    typename RealType_,
+    RecurrentLayerDirection Direction,
+    typename ActivationFunction = None,
+    typename Config = TileConfig<> >
+class MBSPRecurrentConfig {
+public:
+    typedef RealType_ RealType;
+
+    typedef ArrayView<RealType, 2> WeightType;
+    typedef ArrayView<RealType, 3> ActivationType;
+    typedef ActivationType         DeltaType;
+
+public:
+    enum {
+        GRID_TILE_ROWS    = Config::GRID_TILE_ROWS,
+        GRID_TILE_COLUMNS = Config::GRID_TILE_COLUMNS
+    };
+
+    enum {
+        BLOCK_TILE_ROWS    = Config::BLOCK_TILE_ROWS,
+        BLOCK_TILE_COLUMNS = Config::BLOCK_TILE_COLUMNS
+    };
+
+    enum {
+        THREAD_TILE_ROWS    = Config::THREAD_TILE_ROWS,
+        THREAD_TILE_COLUMNS = Config::THREAD_TILE_COLUMNS
+    };
+
+    enum {
+        THREAD_TILE_SIZE = Config::THREAD_TILE_SIZE,
+        BLOCK_TILE_SIZE  = Config::BLOCK_TILE_SIZE
+    };
+
+    enum {
+        BLOCKS_PER_GRID = Config::BLOCKS_PER_GRID,
+        BLOCKS_PER_SM   = Config::BLOCKS_PER_SM
+    };
+
+    enum {
+        THREADS_PER_ROW = Config::THREADS_PER_ROW
+    };
+
+    enum {
+        THREADS_PER_COLUMN = Config::THREADS_PER_COLUMN
+    };
+
+    enum {
+        THREADS_PER_BLOCK = Config::THREADS_PER_BLOCK
+    };
+
+    enum {
+        VALUES_PER_SHARED_LOAD = ((16 + sizeof(RealType) - 1) / sizeof(RealType))
+    };
+
+    enum {
+        THREAD_TILE_COLUMN_SEGMENTS = THREAD_TILE_COLUMNS / VALUES_PER_SHARED_LOAD,
+        THREAD_TILE_COLUMN_SEGMENT_REMAINDER = THREAD_TILE_COLUMNS % VALUES_PER_SHARED_LOAD
+    };
+
+    enum {
+        SHARED_BUFFER_SIZE = get_next_power_of_two(Config::BLOCK_TILE_COLUMNS +
+            Config::BLOCK_TILE_ROWS)
+    };
+
+    enum {
+        GLOBAL_VALUES_PER_THREAD = (BLOCK_TILE_ROWS + BLOCK_TILE_COLUMNS + THREADS_PER_BLOCK - 1) /
+            THREADS_PER_BLOCK
+    };
+
+    enum {
+        VALUES_PER_SHARED_STORE = get_min((16 + sizeof(RealType) - 1) / sizeof(RealType),
+            GLOBAL_VALUES_PER_THREAD)
+    };
+
+    enum {
+        VALUES_PER_GLOBAL_LOAD = get_min(GLOBAL_VALUES_PER_THREAD, VALUES_PER_SHARED_LOAD)
+    };
+
+    enum {
+        VALUES_PER_WEIGHT_LOAD = evenly_divisible(THREAD_TILE_ROWS,
+            (16 + sizeof(RealType) - 1) / sizeof(RealType))
+    };
+
+    enum {
+        INPUT_LOAD_GROUP_SIZE  = BLOCK_TILE_COLUMNS / GLOBAL_VALUES_PER_THREAD,
+        OUTPUT_LOAD_GROUP_SIZE = BLOCK_TILE_ROWS / GLOBAL_VALUES_PER_THREAD
+    };
+
+    static_assert(INPUT_LOAD_GROUP_SIZE + OUTPUT_LOAD_GROUP_SIZE <= THREADS_PER_BLOCK,
+        "Incorrect load group sizes.");
+
+    enum {
+        WARP_SIZE = 32
+    };
+
+    enum {
+        SIMD = GetSIMD<RealType>::value
+    };
+
+    enum {
+        FIXED_POINT_BITS = sizeof(RealType) * 8
+    };
+
+    enum {
+        THREADS_PER_GLOBAL_REDUCTION = ((GRID_TILE_COLUMNS + BLOCK_TILE_COLUMNS - 1) /
+            BLOCK_TILE_COLUMNS) * THREADS_PER_ROW
+    };
+
+    enum {
+        FIXED_POINT_COUNTER_BITS = get_log2(THREADS_PER_GLOBAL_REDUCTION) + 1
+    };
+
+    enum {
+        FIXED_POINT_INTEGER_BITS = get_min((FIXED_POINT_BITS - FIXED_POINT_COUNTER_BITS) / 2, 7)
+    };
+
+    enum {
+        FIXED_POINT_FRACTIONAL_BITS = FIXED_POINT_BITS - FIXED_POINT_COUNTER_BITS -
+            FIXED_POINT_INTEGER_BITS
+    };
+
+    enum {
+        REVERSE = Config::REVERSE
+    };
+
+public:
+    typedef typename GetIntType<sizeof(RealType)>::type IntType;
+    typedef fixed_point<IntType, FIXED_POINT_FRACTIONAL_BITS> FixedPointType;
+
+public:
+    class
+    #if defined(__CUDACC__)
+    __align__(16)
+    #endif
+    ThreadTileWeights {
+    public:
+        RealType data[THREAD_TILE_ROWS][THREAD_TILE_COLUMNS];
+    };
+
+    class
+    #if defined(__CUDACC__)
+    __align__(16)
+    #endif
+    ThreadTileAccumulators {
+    public:
+        RealType data[THREAD_TILE_ROWS];
+    };
+
+    class
+    #if defined(__CUDACC__)
+    __align__(16)
+    #endif
+    ThreadTileInputs {
+    public:
+        RealType data[THREAD_TILE_COLUMNS];
+    };
+
+    class
+    #if defined(__CUDACC__)
+    __align__(16)
+    #endif
+    DataLoadingBuffer {
+    public:
+        RealType data[GLOBAL_VALUES_PER_THREAD];
+    };
+
+    class
+    #if defined(__CUDACC__)
+    __align__(16)
+    #endif
+    SharedDataStorage
+    {
+    public:
+        RealType data[2 * SHARED_BUFFER_SIZE];
+    };
+
+    union GlobalAccessType {
+        typename GetAlignedType<sizeof(RealType)*VALUES_PER_GLOBAL_LOAD>::type aligned_data;
+        RealType data[VALUES_PER_GLOBAL_LOAD];
+    };
+
+    union SharedAccessType {
+        typename GetAlignedType<sizeof(RealType)*VALUES_PER_SHARED_LOAD>::type aligned_data;
+        RealType data[VALUES_PER_SHARED_LOAD];
+    };
+
+    union SharedStoreType {
+        typename GetAlignedType<sizeof(RealType)*VALUES_PER_SHARED_STORE>::type aligned_data;
+        RealType data[VALUES_PER_SHARED_STORE];
+    };
+
+    union WeightAccessType {
+        typename GetAlignedType<sizeof(RealType)*VALUES_PER_WEIGHT_LOAD>::type aligned_data;
+        RealType data[VALUES_PER_WEIGHT_LOAD];
+    };
+
+public:
+    MBSPRecurrentConfig(ActivationFunction f, RecurrentOpsConfig c)
+        : activationFunction(f), config(c) {}
+
+    MBSPRecurrentConfig(RecurrentOpsConfig c) : config(c) {}
+
+public:
+    __device__ RealType apply_activation_function(RealType v) const {
+        return activationFunction(v);
+    }
+
+    __device__ RealType apply_activation_derivative(RealType a, RealType d) const {
+        return activationFunction(a, d);
+    }
+
+    __device__ index_t get_timestep(index_t logical_timestep, index_t timesteps) const {
+        if (Direction == RECURRENT_FORWARD) {
+            return logical_timestep;
+        }
+        else {
+            return timesteps - logical_timestep - 1;
+        }
+    }
+
+    __device__ bool is_last_timestep(index_t timestep, index_t timesteps) const {
+        if (Direction == RECURRENT_FORWARD) {
+            return timestep == (timesteps - 1);
+        }
+        else {
+            return timestep == 0;
+        }
+    }
+
+    __device__ constexpr bool is_reversed() const {
+        return Direction == RECURRENT_REVERSE;
+    }
+
+public:
+    __device__ constexpr bool is_always_fully_covered() const {
+        return false;
+    }
+
+public:
+    ActivationFunction activationFunction;
+    RecurrentOpsConfig config;
+
+};
+
+
+template <typename RealType, typename TileConfiguration = TileConfig<>>
+class MBSPRecurrentArchitectureParameters {
+public:
+    typedef TileConfiguration TileParameters;
+
+public:
+    MBSPRecurrentArchitectureParameters(RecurrentOpsConfig config)
+        : config_(config) {}
+
+public:
+    dim3 blocks() const {
+        int block_rows    = (config_.layer_size + TileParameters::BLOCK_TILE_ROWS    - 1) /
+            TileParameters::BLOCK_TILE_ROWS;
+        int block_columns = (config_.layer_size + TileParameters::BLOCK_TILE_COLUMNS - 1) /
+            TileParameters::BLOCK_TILE_COLUMNS;
+
+        return dim3(block_rows, block_columns, 1);
+    }
+
+    index_t block_count() const {
+        return blocks().x * blocks().y;
+    }
+
+    dim3 threads() const {
+        return dim3(TileParameters::THREADS_PER_ROW, TileParameters::THREADS_PER_COLUMN, 1);
+    }
+
+    index_t thread_count() const {
+        return threads().x * threads().y;
+    }
+
+    index_t activations_per_block() const {
+        return TileParameters::BLOCK_TILE_ROWS;
+    }
+
+    index_t activations_per_grid() const {
+        return TileParameters::GRID_TILE_ROWS;
+    }
+
+public:
+    bool is_supported() const {
+        return config_.layer_size <= TileParameters::GRID_TILE_COLUMNS;
+    }
+
+private:
+    RecurrentOpsConfig config_;
+
+};
+
+}
+}
+}
+
+
