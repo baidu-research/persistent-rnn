@@ -45,10 +45,10 @@ typedef enum
 // human-readable error messages
 const char* prnnGetErrorString(prnnStatus_t status);
 
-prnnStatus_t prnnCreate    (prnnHandle_t *handle);
+prnnStatus_t prnnCreate    (prnnHandle_t* handle);
 prnnStatus_t prnnDestroy   (prnnHandle_t handle);
 prnnStatus_t prnnSetStream (prnnHandle_t handle, cudaStream_t streamId);
-prnnStatus_t prnnGetStream (prnnHandle_t handle, cudaStream_t *streamId);
+prnnStatus_t prnnGetStream (prnnHandle_t handle, cudaStream_t* streamId);
 
 /* Data structures to represent input data and the Neural Network Layer */
 typedef struct prnnTensorStruct* prnnTensorDescriptor_t;
@@ -260,7 +260,7 @@ prnnStatus_t prnnRNNBackwardWeights(prnnHandle_t handle,
                                     const void* x,
                                     const prnnTensorDescriptor_t hxDesc,
                                     const void* hx,
-                                    const prnnTensorDescriptor_t * yDesc,
+                                    const prnnTensorDescriptor_t* yDesc,
                                     const void* y,
                                     const void* workspace,
                                     size_t workSpaceSizeInBytes,

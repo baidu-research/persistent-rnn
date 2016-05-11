@@ -27,11 +27,11 @@ class float16 {
 public:
     uint16_t val_;
 
-    __host__ __device__
+    CUDA_DECORATOR
     inline
     float16() {};
 
-    __host__ __device__
+    CUDA_DECORATOR
     inline explicit
     float16(float value) {
         #ifdef __CUDA_ARCH__
@@ -58,7 +58,7 @@ public:
         #endif
     }
 
-    __host__ __device__
+    CUDA_DECORATOR
     inline
     float to_float() const {
         #ifdef __CUDA_ARCH__
@@ -84,204 +84,204 @@ public:
         #endif
     }
 
-    __host__ __device__
+    CUDA_DECORATOR
     inline
     float16 operator-() const {
         float16 tmp(-(this->to_float()));
         return tmp;
     }
 
-    __host__ __device__
+    CUDA_DECORATOR
     inline
     bool operator==(float16 rhs) const {
         return this->to_float() == rhs.to_float();
     }
 
-    __host__ __device__
+    CUDA_DECORATOR
     inline
     bool operator<(float16 rhs) const {
         return this->to_float() < rhs.to_float();
     }
 
-    __host__ __device__
+    CUDA_DECORATOR
     inline
     bool operator<=(float16 rhs) const {
         return this->to_float() <= rhs.to_float();
     }
 
-    __host__ __device__
+    CUDA_DECORATOR
     inline
     bool operator>(float16 rhs) const {
         return this->to_float() > rhs.to_float();
     }
 
-    __host__ __device__
+    CUDA_DECORATOR
     inline
     bool operator>=(float16 rhs) const {
         return this->to_float() >= rhs.to_float();
     }
 
-    __host__ __device__
+    CUDA_DECORATOR
     inline
     bool operator==(float rhs) const {
         return this->to_float() == rhs;
     }
 
-    __host__ __device__
+    CUDA_DECORATOR
     inline
     bool operator<(float rhs) const {
         return this->to_float() < rhs;
     }
 
-    __host__ __device__
+    CUDA_DECORATOR
     inline
     bool operator<=(float rhs) const {
         return this->to_float() <= rhs;
     }
 
-    __host__ __device__
+    CUDA_DECORATOR
     inline
     bool operator>(float rhs) const {
         return this->to_float() > rhs;
     }
 
-    __host__ __device__
+    CUDA_DECORATOR
     inline
     bool operator>=(float rhs) const {
         return this->to_float() >= rhs;
     }
 
-    __host__ __device__
+    CUDA_DECORATOR
     inline
     bool operator==(double rhs) const {
         return this->to_float() == rhs;
     }
 
-    __host__ __device__
+    CUDA_DECORATOR
     inline
     bool operator<(double rhs) const {
         return this->to_float() < rhs;
     }
 
-    __host__ __device__
+    CUDA_DECORATOR
     inline
     bool operator<=(double rhs) const {
         return this->to_float() <= rhs;
     }
 
-    __host__ __device__
+    CUDA_DECORATOR
     inline
     bool operator>(double rhs) const {
         return this->to_float() > rhs;
     }
 
-    __host__ __device__
+    CUDA_DECORATOR
     inline
     bool operator>=(double rhs) const {
         return this->to_float() >= rhs;
     }
 
-    __host__ __device__
+    CUDA_DECORATOR
     inline
     bool operator==(int rhs) const {
         return this->to_float() == rhs;
     }
 
-    __host__ __device__
+    CUDA_DECORATOR
     inline
     bool operator<(int rhs) const {
         return this->to_float() < rhs;
     }
 
-    __host__ __device__
+    CUDA_DECORATOR
     inline
     bool operator<=(int rhs) const {
         return this->to_float() <= rhs;
     }
 
-    __host__ __device__
+    CUDA_DECORATOR
     inline
     bool operator>(int rhs) const {
         return this->to_float() > rhs;
     }
 
-    __host__ __device__
+    CUDA_DECORATOR
     inline
     bool operator>=(int rhs) const {
         return this->to_float() >= rhs;
     }
 
-    __host__ __device__
+    CUDA_DECORATOR
     inline
     float16& operator+=(const float16& rhs) {
         this->val_ = float16(this->to_float() + rhs.to_float()).val_;
         return *this;
     }
 
-    __host__ __device__
+    CUDA_DECORATOR
     inline
     float operator+(float rhs) {
         return this->to_float() + rhs;
     }
 
-    __host__ __device__
+    CUDA_DECORATOR
     inline
     float operator+(const float &rhs) {
         return this->to_float() + rhs;
     }
 
-    __host__ __device__
+    CUDA_DECORATOR
     inline
     float16& operator-=(const float16 &rhs) {
         this->val_ = float16(this->to_float() - rhs.to_float()).val_;
         return *this;
     }
 
-    __host__ __device__
+    CUDA_DECORATOR
     inline
     float16 operator-(float16 rhs) {
         return float16(this->to_float() - rhs.to_float());
     }
 
-    __host__ __device__
+    CUDA_DECORATOR
     inline
     float operator-(float rhs) {
         return this->to_float() - rhs;
     }
 
-    __host__ __device__
+    CUDA_DECORATOR
     inline
     float16& operator*=(float16 rhs) {
         this->val_ = float16(this->to_float() * rhs.to_float()).val_;
         return *this;
     }
 
-    __host__ __device__
+    CUDA_DECORATOR
     inline
     float16 operator*(const float16 &rhs) {
         return float16(this->to_float() * rhs.to_float());
     }
 
-    __host__ __device__
+    CUDA_DECORATOR
     inline
     float operator*(const float &rhs) {
         return this->to_float() * rhs;
     }
 
-    __host__ __device__
+    CUDA_DECORATOR
     inline
     float16& operator/=(const float16 &rhs) {
         this->val_ = float16(this->to_float() / rhs.to_float()).val_;
         return *this;
     }
 
-    __host__ __device__
+    CUDA_DECORATOR
     inline
     float16 operator/(float16 rhs) {
         return float16(this->to_float() / rhs.to_float());
     }
 
-    __host__ __device__
+    CUDA_DECORATOR
     inline
     float operator/(float rhs) {
         return this->to_float() / rhs;
@@ -333,138 +333,138 @@ private:
     static constexpr int32_t minD = minC - subC - 1;
 };
 
-__host__ __device__
+CUDA_DECORATOR
 inline
 float16 operator*(const float16& lhs, const float16& rhs) {
     return float16(lhs.to_float() * rhs.to_float());
 }
 
-__host__ __device__
+CUDA_DECORATOR
 inline
 bool operator==(const float& lhs, const float16& rhs) {
     return rhs.to_float() == lhs;
 }
 
 
-__host__ __device__
+CUDA_DECORATOR
 inline
 bool operator<(const float& lhs, const float16& rhs) {
     return lhs < rhs.to_float();
 }
 
 
-__host__ __device__
+CUDA_DECORATOR
 inline
 bool operator>(const float& lhs, const float16& rhs) {
     return lhs > rhs.to_float();
 }
 
 
-__host__ __device__
+CUDA_DECORATOR
 inline
 bool operator<=(const float& lhs, const float16& rhs) {
     return lhs <= rhs.to_float();
 }
 
 
-__host__ __device__
+CUDA_DECORATOR
 inline
 bool operator>=(const float& lhs, const float16& rhs) {
     return lhs >= rhs.to_float();
 }
 
 
-__host__ __device__
+CUDA_DECORATOR
 inline
 double operator-(const double& lhs, const float16& rhs) {
     return lhs - static_cast<double>(rhs.to_float());
 }
 
-__host__ __device__
+CUDA_DECORATOR
 inline
 double operator+(const double& lhs, const float16& rhs) {
     return lhs + static_cast<double>(rhs.to_float());
 }
 
-__host__ __device__
+CUDA_DECORATOR
 inline
 double operator*(const double& lhs, const float16& rhs) {
     return lhs * static_cast<double>(rhs.to_float());
 }
 
-__host__ __device__
+CUDA_DECORATOR
 inline
 double operator/(const double& lhs, const float16& rhs) {
     return lhs / static_cast<double>(rhs.to_float());
 }
 
 
-__host__ __device__
+CUDA_DECORATOR
 inline
 float operator-(const float& lhs, const float16& rhs) {
     return lhs - rhs.to_float();
 }
 
-__host__ __device__
+CUDA_DECORATOR
 inline
 float operator+(const float& lhs, const float16& rhs) {
     return lhs + rhs.to_float();
 }
 
-__host__ __device__
+CUDA_DECORATOR
 inline
 float16 operator+(const float16& lhs, const float16& rhs) {
     return float16(lhs.to_float() + rhs.to_float());
 }
 
-__host__ __device__
+CUDA_DECORATOR
 inline
 float16 operator-(const float16& lhs, const float16& rhs) {
     return float16(lhs.to_float() - rhs.to_float());
 }
 
-__host__ __device__
+CUDA_DECORATOR
 inline
 float16 operator/(const float16& lhs, const float16& rhs) {
     return float16(lhs.to_float() / rhs.to_float());
 }
 
-__host__ __device__
+CUDA_DECORATOR
 inline
 float operator*(const float& lhs, const float16& rhs) {
     return lhs * rhs.to_float();
 }
 
-__host__ __device__
+CUDA_DECORATOR
 inline
 float operator/(const float& lhs, const float16& rhs) {
     return lhs / rhs.to_float();
 }
 
-__host__ __device__
+CUDA_DECORATOR
 inline
 float operator-(const int& lhs, const float16& rhs) {
     return lhs - rhs.to_float();
 }
 
-__host__ __device__
+CUDA_DECORATOR
 inline
 float operator+(const int& lhs, const float16& rhs) {
     return lhs + rhs.to_float();
 }
 
-__host__ __device__
+CUDA_DECORATOR
 inline
 float operator/(const int& lhs, const float16& rhs) {
     return lhs / rhs.to_float();
 }
-__host__ __device__
+CUDA_DECORATOR
 inline
 float operator*(const int& lhs, const float16& rhs) {
     return lhs * rhs.to_float();
 }
 
-__host__ __device__
+CUDA_DECORATOR
 inline
 float operator*(const bool& lhs, const float16& rhs) {
     return lhs * rhs.to_float();

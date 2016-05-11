@@ -118,55 +118,51 @@ void TestSimpleRecurrentOpsGradientCheck(prnn::RecurrentLayerDirection direction
     prnn::Array weights = prnn::zeros({layer_size, layer_size});
     auto weights_slice = slice(weights, {0, 0}, {window_rows, window_columns});
 
-    prnn::copy(prnn::randn(prnn::make_dim(window_rows, window_columns)), weights_slice);
+    prnn::copy(prnn::randn({window_rows, window_columns)), weights_slice);
 
     prnn::unary_op(prnn::scalar_multiplies(1.0e-2), weights, weights);
 
-    auto input_activations = prnn::zeros<Real>(
-        prnn::make_dim(layer_size, mini_batch, timesteps));
+    auto input_activations = prnn::zeros({layer_size, mini_batch, timesteps});
 
-    auto reference_activations = prnn::zeros<Real>(
-        prnn::make_dim(layer_size, mini_batch, timesteps));
+    auto reference_activations = prnn::zeros({layer_size, mini_batch, timesteps});
 
     prnn::copy(
-        prnn::copy(prnn::rand<Real>(prnn::make_dim(window_outputs, mini_batch, timesteps),
-                          prnn::CpuPlace()), prnn::get_place()),
+        prnn::rand({window_outputs, mini_batch, timesteps}),
         prnn::slice(input_activations,
-                     prnn::make_dim(0, 0, 0),
-                     prnn::make_dim(window_outputs, mini_batch, timesteps)));
+                     {0, 0, 0},
+                     {window_outputs, mini_batch, timesteps}));
 
     prnn::copy(
-        prnn::copy(prnn::rand<Real>(prnn::make_dim(window_outputs, mini_batch, timesteps),
-                          prnn::CpuPlace()), prnn::get_place()),
+        prnn::rand({window_outputs, mini_batch, timesteps)),
         prnn::slice(reference_activations,
-                     prnn::make_dim(0, 0, 0),
-                     prnn::make_dim(window_outputs, mini_batch, timesteps)));
+                    {0, 0, 0),
+                    {window_outputs, mini_batch, timesteps)));
 
     auto output_activations = copy(input_activations);
 
     logger::log("TestRecurrent") << "Input Weights     " << prnn::preview_array(weights);
     logger::log("TestRecurrent") << "Input Activations " << prnn::preview_array(
         prnn::reshape(prnn::copy(prnn::slice(output_activations,
-                                                prnn::make_dim(0,0,0),
-                                                prnn::make_dim(window_outputs, mini_batch,
-                                                                timesteps))),
-                       prnn::make_dim(window_outputs, mini_batch * timesteps)));
+                                                {0,0,0},
+                                                {window_outputs, mini_batch,
+                                                                timesteps})),
+                       {window_outputs, mini_batch * timesteps}));
 
-    prnn::mbsp_forward_prop_recurrent(handle, prnn::relu(), direction,
+    prnn::forward_prop_recurrent(handle, prnn::relu(), direction,
         weights, output_activations);
 
     logger::log("TestRecurrent") << "Output Activations " << prnn::preview_array(
         prnn::reshape(prnn::copy(prnn::slice(output_activations,
-                                                prnn::make_dim(0,0,0),
-                                                prnn::make_dim(window_outputs, mini_batch,
-                                                                timesteps))),
-                       prnn::make_dim(window_outputs, mini_batch * timesteps)));
+                                                {0,0,0},
+                                                {window_outputs, mini_batch,
+                                                                timesteps})),
+                       {window_outputs, mini_batch * timesteps)));
     logger::log("TestRecurrent") << "Reference Activations " << prnn::preview_array(
         prnn::reshape(prnn::copy(prnn::slice(reference_activations,
-                                                prnn::make_dim(0,0,0),
-                                                prnn::make_dim(window_outputs, mini_batch,
-                                                                timesteps))),
-                       prnn::make_dim(window_outputs, mini_batch * timesteps)));
+                                                {0,0,0},
+                                                {window_outputs, mini_batch,
+                                                                timesteps})),
+                       {window_outputs, mini_batch * timesteps}));
 
     double cost = compute_cost(output_activations, reference_activations, window_outputs);
     prnn::Array<Real, 3> deltas = compute_deltas(output_activations, reference_activations,
@@ -174,25 +170,25 @@ void TestSimpleRecurrentOpsGradientCheck(prnn::RecurrentLayerDirection direction
 
     logger::log("TestRecurrent") << "Input Deltas " << prnn::preview_array(
         prnn::reshape(prnn::copy(prnn::slice(deltas,
-                                                prnn::make_dim(0,0,0),
-                                                prnn::make_dim(window_outputs, mini_batch,
-                                                                timesteps))),
-                       prnn::make_dim(window_outputs, mini_batch * timesteps)));
+                                                {0,0,0),
+                                                {window_outputs, mini_batch,
+                                                                timesteps})),
+                       {window_outputs, mini_batch * timesteps}));
 
-    prnn::mbsp_back_prop_deltas_recurrent(handle, prnn::mult_drelu(),
+    prnn::back_prop_deltas_recurrent(handle, prnn::mult_drelu(),
         direction, weights, output_activations, deltas);
 
     prnn::Array<Real, 2> dWeights = prnn::ones<Real>(weights.size());
 
-    prnn::mbsp_back_prop_gradients_recurrent(handle, direction,
+    prnn::back_prop_gradients_recurrent(handle, direction,
         output_activations, deltas, dWeights);
 
     logger::log("TestRecurrent") << "Output Deltas " << prnn::preview_array(
         prnn::reshape(prnn::copy(prnn::slice(deltas,
-                                                prnn::make_dim(0,0,0),
-                                                prnn::make_dim(window_outputs, mini_batch,
-                                                                timesteps))),
-                       prnn::make_dim(window_outputs, mini_batch * timesteps)));
+                                                {0,0,0},
+                                                {window_outputs, mini_batch,
+                                                               timesteps))),
+                       {window_outputs, mini_batch * timesteps}));
     logger::log("TestRecurrent") << "dWeights      " << prnn::preview_array(dWeights);
 
     size_t gradient_count = window_rows * window_columns;
@@ -213,10 +209,10 @@ void TestSimpleRecurrentOpsGradientCheck(prnn::RecurrentLayerDirection direction
         size_t sample_row    = sample_position % window_rows;
         size_t sample_column = sample_position / window_rows;
 
-        Real original_value = weights [prnn::make_dim(sample_row, sample_column)];
-        Real gradient       = dWeights[prnn::make_dim(sample_row, sample_column)];
+        Real original_value = weights [{sample_row, sample_column}];
+        Real gradient       = dWeights[{sample_row, sample_column}];
 
-        set(weights, prnn::make_dim(sample_row, sample_column),
+        set(weights, {sample_row, sample_column),
             static_cast<Real>(original_value - epsilon));
 
         logger::log("TestRecurrent") << "Updated Input Weight (" << sample_row << ", "
@@ -224,19 +220,19 @@ void TestSimpleRecurrentOpsGradientCheck(prnn::RecurrentLayerDirection direction
             << (original_value - epsilon) << "\n";
 
         auto copied_output_activations = copy(input_activations);
-        prnn::mbsp_forward_prop_recurrent(handle, prnn::relu(), direction,
+        prnn::forward_prop_recurrent(handle, prnn::relu(), direction,
             weights, copied_output_activations);
         logger::log("TestRecurrent") << "Updated Output Activations " << prnn::preview_array(
             prnn::reshape(prnn::copy(prnn::slice(copied_output_activations,
-                                                    prnn::make_dim(0,0,0),
-                                                    prnn::make_dim(window_outputs, mini_batch,
-                                                                    timesteps))),
-                           prnn::make_dim(window_outputs, mini_batch * timesteps)));
+                                                    {0,0,0},
+                                                    {window_outputs, mini_batch,
+                                                                    timesteps})),
+                           {window_outputs, mini_batch * timesteps}));
 
         double left_cost = compute_cost(copied_output_activations, reference_activations,
             window_outputs);
 
-        set(weights, prnn::make_dim(sample_row, sample_column),
+        set(weights, {sample_row, sample_column},
             static_cast<Real>(original_value + epsilon));
 
         logger::log("TestRecurrent") << "Updated Input Weight (" << sample_row << ", "
@@ -244,19 +240,19 @@ void TestSimpleRecurrentOpsGradientCheck(prnn::RecurrentLayerDirection direction
             << (original_value + epsilon) << "\n";
 
         copied_output_activations = copy(input_activations);
-        prnn::mbsp_forward_prop_recurrent(handle, prnn::relu(), direction,
+        prnn::forward_prop_recurrent(handle, prnn::relu(), direction,
             weights, copied_output_activations);
         logger::log("TestRecurrent") << "Updated Output Activations " << prnn::preview_array(
             prnn::reshape(prnn::copy(prnn::slice(copied_output_activations,
-                                                    prnn::make_dim(0,0,0),
-                                                    prnn::make_dim(window_outputs, mini_batch,
-                                                                    timesteps))),
-                           prnn::make_dim(window_outputs, mini_batch * timesteps)));
+                                                    {0,0,0},
+                                                    {window_outputs, mini_batch,
+                                                                    timesteps})),
+                           {window_outputs, mini_batch * timesteps}));
 
         double right_cost = compute_cost(copied_output_activations, reference_activations,
             window_outputs);
 
-        set(weights, prnn::make_dim(sample_row, sample_column), original_value);
+        set(weights, {sample_row, sample_column}, original_value);
 
         double numerical_gradient = (right_cost - left_cost) / (2.0 * epsilon);
         double local_difference = numerical_gradient - gradient;
@@ -290,192 +286,32 @@ void TestSimpleRecurrentOpsGradientCheck(prnn::RecurrentLayerDirection direction
     ASSERT_GEQUAL(difference, 1e-16);
 }
 
-void TestSimpleRecurrentOpsReferenceCheck(prnn::Place p,
-    prnn::RecurrentLayerDirection direction) {
-
-    typedef float Real;
-
-    std::default_random_engine random_engine;
-
-    random_engine.seed(377);
-
-    prnn::set_place(prnn::CpuPlace());
-    prnn::srand(377);
-    prnn::srandn(377);
-
-    prnn::set_place(p);
-    prnn::srand(377);
-    prnn::srandn(377);
-
-    int layer_size = 1152;
-    int timesteps  = 10;
-    int mini_batch = 16;
-    int samples    = 100;
-
-    int window_rows    = 1152;
-    int window_columns = 1152;
-    int window_outputs = window_rows;
-
-    samples = std::min(window_rows * window_columns, samples);
-
-    // note that we are testing the persistent kernels here
-    prnn::RecurrentOpsConfig config(layer_size, mini_batch, true);
-    prnn::RecurrentOpsHandle handle(config);
-
-    // note that we are using the generic kernels here
-    prnn::RecurrentOpsConfig nonpersistent_config(layer_size, mini_batch, false);
-    prnn::RecurrentOpsHandle nonpersistent_handle(nonpersistent_config);
-
-    prnn::Array<Real, 2> weights = prnn::zeros<Real>(prnn::make_dim(layer_size, layer_size));
-    auto weights_slice = slice(weights, prnn::make_dim(0, 0),
-        prnn::make_dim(window_rows, window_columns));
-
-    prnn::copy(prnn::randn<Real>(prnn::make_dim(window_rows, window_columns),
-        prnn::CpuPlace()), weights_slice);
-
-    prnn::unary_op(prnn::scalar_multiplies(1.0e-2), weights, weights);
-
-    prnn::Array<Real, 3> input_activations = prnn::zeros<Real>(
-        prnn::make_dim(layer_size, mini_batch, timesteps));
-
-    prnn::Array<Real, 3> reference_activations = prnn::zeros<Real>(
-        prnn::make_dim(layer_size, mini_batch, timesteps));
-
-    prnn::copy(
-        prnn::copy(prnn::rand<Real>(prnn::make_dim(window_outputs, mini_batch, timesteps),
-                          prnn::CpuPlace()), prnn::get_place()),
-        prnn::slice(input_activations,
-                     prnn::make_dim(0, 0, 0),
-                     prnn::make_dim(window_outputs, mini_batch, timesteps)));
-
-    prnn::copy(
-        prnn::copy(prnn::rand<Real>(prnn::make_dim(window_outputs, mini_batch, timesteps),
-                          prnn::CpuPlace()), prnn::get_place()),
-        prnn::slice(reference_activations,
-                     prnn::make_dim(0, 0, 0),
-                     prnn::make_dim(window_outputs, mini_batch, timesteps)));
-
-    auto output_activations = copy(input_activations);
-    auto nonpersistent_output_activations = copy(input_activations);
-
-    logger::log("TestRecurrent") << "Input Weights     " << prnn::preview_array(weights);
-    logger::log("TestRecurrent") << "Input Activations " << prnn::preview_array(
-        prnn::reshape(prnn::copy(prnn::slice(output_activations,
-                                             prnn::make_dim(0,0,0),
-                                             prnn::make_dim(window_outputs, mini_batch, timesteps))),
-                       prnn::make_dim(window_outputs, mini_batch * timesteps)));
-
-    prnn::mbsp_forward_prop_recurrent(handle, prnn::relu(), direction,
-        weights, output_activations);
-
-    prnn::mbsp_forward_prop_recurrent(nonpersistent_handle, prnn::relu(), direction,
-        weights, nonpersistent_output_activations);
-
-    logger::log("TestRecurrent") << "Output Activations " << prnn::preview_array(
-        prnn::reshape(prnn::copy(prnn::slice(output_activations,
-                                             prnn::make_dim(0,0,0),
-                                             prnn::make_dim(window_outputs, mini_batch, timesteps))),
-                       prnn::make_dim(window_outputs, mini_batch * timesteps)));
-    logger::log("TestRecurrent") << "Reference Activations " << prnn::preview_array(
-        prnn::reshape(prnn::copy(prnn::slice(reference_activations,
-                                             prnn::make_dim(0,0,0),
-                                             prnn::make_dim(window_outputs, mini_batch, timesteps))),
-                       prnn::make_dim(window_outputs, mini_batch * timesteps)));
-
-    auto deltas = compute_deltas(output_activations, reference_activations,
-        window_outputs);
-    auto nonpersistent_deltas = copy(deltas);
-
-    logger::log("TestRecurrent") << "Input Deltas " << prnn::preview_array(
-        prnn::reshape(prnn::copy(prnn::slice(deltas,
-                                             prnn::make_dim(0,0,0),
-                                             prnn::make_dim(window_outputs, mini_batch, timesteps))),
-                       prnn::make_dim(window_outputs, mini_batch * timesteps)));
-
-    prnn::mbsp_back_prop_deltas_recurrent(handle, prnn::mult_drelu(),
-        direction, weights, output_activations, deltas);
-
-    prnn::mbsp_back_prop_deltas_recurrent(nonpersistent_handle, prnn::mult_drelu(),
-        direction, weights, output_activations, nonpersistent_deltas);
-
-    auto dWeights = prnn::ones<Real>(weights.size());
-    auto nonpersistent_dWeights = prnn::ones<Real>(weights.size());
-
-    prnn::mbsp_back_prop_gradients_recurrent(handle, direction,
-        output_activations, deltas, dWeights);
-
-    prnn::mbsp_back_prop_gradients_recurrent(nonpersistent_handle, direction,
-        output_activations, deltas, nonpersistent_dWeights);
-
-    logger::log("TestRecurrent") << "Output Deltas " << prnn::preview_array(
-        prnn::reshape(prnn::copy(prnn::slice(deltas,
-                                             prnn::make_dim(0,0,0),
-                                             prnn::make_dim(window_outputs, mini_batch, timesteps))),
-                       prnn::make_dim(window_outputs, mini_batch * timesteps)));
-    logger::log("TestRecurrent") << "dWeights      " << prnn::preview_array(dWeights);
-
-    auto output_activation_difference = prnn::unary_op(prnn::absolute(),
-        prnn::binary_op(prnn::minus(), output_activations,
-            nonpersistent_output_activations));
-
-    logger::log("TestRecurrent") << "Output Activation Differences " << prnn::preview_array(
-        prnn::reshape(prnn::copy(prnn::slice(output_activation_difference,
-                                             prnn::make_dim(0,0,0),
-                                             prnn::make_dim(window_outputs, mini_batch, timesteps))),
-                       prnn::make_dim(window_outputs, mini_batch * timesteps)));
-
-    ASSERT_LEQUAL(static_cast<double>(prnn::reduce(prnn::plus(), {},
-        output_activation_difference)[0]) /
-        (0.0 + window_outputs * mini_batch * timesteps), 1.0e-6);
-
-    auto delta_difference = prnn::unary_op(prnn::absolute(),
-        prnn::binary_op(prnn::minus(), deltas, nonpersistent_deltas));
-
-    logger::log("TestRecurrent") << "Deltas Differences " << prnn::preview_array(
-        prnn::reshape(prnn::copy(prnn::slice(delta_difference,
-                                             prnn::make_dim(0,0,0),
-                                             prnn::make_dim(window_outputs, mini_batch, timesteps))),
-                       prnn::make_dim(window_outputs, mini_batch * timesteps)));
-
-    ASSERT_LEQUAL(static_cast<double>(prnn::reduce(prnn::plus(), {}, delta_difference)[0]) /
-        (0.0 + window_outputs * mini_batch * timesteps), 1.0e-6);
-
-    auto dWeights_difference = prnn::unary_op(prnn::absolute(),
-        prnn::binary_op(prnn::minus(), dWeights, nonpersistent_dWeights));
-
-    logger::log("TestRecurrent") << "dWeights Differences " << prnn::preview_array(
-        prnn::reshape(prnn::copy(prnn::slice(dWeights_difference,
-                                                prnn::make_dim(0,0),
-                                                prnn::make_dim(window_outputs, window_outputs))),
-                       prnn::make_dim(window_outputs, window_outputs)));
-
-    ASSERT_LEQUAL(static_cast<double>(prnn::reduce(prnn::plus(), {}, dWeights_difference)[0]) /
-        (window_outputs * window_outputs), 1.0e-6);
+void TestRecurrentOpsGradientCheckHelper(prnn::RecurrentLayerDirection d) {
+    TestSimpleRecurrentOpsGradientCheck(d);
 }
 
-void TestRecurrentOpsGradientCheckHelper(prnn::Place p, prnn::RecurrentLayerDirection d) {
-    TestSimpleRecurrentOpsGradientCheck(p, d);
-}
-
-void TestRecurrentOpsGradientCheckCpu() {
+void TestRecurrentOpsGradientCheck() {
     TestRecurrentOpsGradientCheckHelper(prnn::RECURRENT_FORWARD);
 }
 
-void TestRecurrentOpsGradientCheckGpu() {
-    TestRecurrentOpsGradientCheckHelper(prnn::RECURRENT_FORWARD);
-}
-
-void TestReverseRecurrentOpsGradientCheckGpu() {
+void TestReverseRecurrentOpsGradientCheck() {
     TestRecurrentOpsGradientCheckHelper(prnn::RECURRENT_REVERSE);
 }
 
-void TestRecurrentOpsReferenceCheckGpu() {
-    TestSimpleRecurrentOpsReferenceCheck(prnn::RECURRENT_FORWARD);
+void RunTest(const std::string& testName, void(*)(void) function) {
+    try {
+        function();
+        std::cout << "Test " << testName << " Passed\n";
+    }
+    catch(std::exception& e) {
+        std::cout << "Test " << testName << " Failed\n";
+    }
 }
 
 int main(int argc, char** argv) {
 
-
+    RunTest("Recurrent Forward Ops Gradient Check", TestRecurrentOpsGradientCheck());
+    RunTest("Recurrent Reverse Ops Gradient Check", TestReverseRecurrentOpsGradientCheck());
 
     return 0;
 }
