@@ -13,7 +13,6 @@ prnn_cmd_line_targets = COMMAND_LINE_TARGETS
 prnn_path_to_root_dir = ".."
 
 # try to import an environment
-exec open(prnn_path_to_root_dir + "/scripts/which.py")
 env = BuildEnvironment()
 env['PRNN_PATH'] = Dir('.').abspath
 

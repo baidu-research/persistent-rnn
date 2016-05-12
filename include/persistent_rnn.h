@@ -128,8 +128,8 @@ typedef enum
 {
     PRNN_RNN_RELU = 0, // Stock RNN with ReLu activation
     PRNN_RNN_TANH = 1, // Stock RNN with tanh activation
-    PRNN_LSTM = 2,     // LSTM with no peephole connections
-    PRNN_GRU = 3       // Using h' = tanh(r * Uh(t-1) + Wx) and h = (1 - z) * h' + z * h(t-1);
+    PRNN_LSTM     = 2,     // LSTM with no peephole connections
+    PRNN_GRU      = 3       // Using h' = tanh(r * Uh(t-1) + Wx) and h = (1 - z) * h' + z * h(t-1);
 } prnnRNNMode_t;
 
 typedef enum
