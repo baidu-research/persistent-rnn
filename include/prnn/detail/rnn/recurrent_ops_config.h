@@ -2,7 +2,6 @@
 
 // Persistent RNN Includes
 #include <prnn/detail/array.h>
-#include <prnn/detail/array_view.h>
 #include <prnn/detail/fixed_point.h>
 
 #include <prnn/detail/cuda.h>
