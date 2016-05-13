@@ -5,16 +5,16 @@
 */
 
 // Persistent RNN Includes
-#include <prnn/matrix/interface/matrix.h>
-#include <prnn/matrix/interface/allocation.h>
-#include <prnn/matrix/interface/dimension_transformations.h>
-#include <prnn/matrix/interface/matrix_transformations.h>
-#include <prnn/matrix/interface/matrix_operations.h>
-#include <prnn/matrix/interface/operation.h>
+#include <prnn/detail/matrix/matrix.h>
+#include <prnn/detail/matrix/allocation.h>
+#include <prnn/detail/matrix/dimension_transformations.h>
+#include <prnn/detail/matrix/matrix_transformations.h>
+#include <prnn/detail/matrix/matrix_operations.h>
+#include <prnn/detail/matrix/operation.h>
 
-#include <prnn/parallel/interface/synchronization.h>
+#include <prnn/detail/parallel/synchronization.h>
 
-#include <prnn/util/interface/debug.h>
+#include <prnn/detail/util/debug.h>
 
 // Standard Library Includes
 #include <cmath>

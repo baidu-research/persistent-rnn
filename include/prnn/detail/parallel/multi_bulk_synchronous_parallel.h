@@ -1,10 +1,10 @@
 
 #pragma once
 
-#include <lucius/parallel/interface/ConcurrentCollectives.h>
-#include <lucius/parallel/interface/Synchronization.h>
+#include <prnn/parallel/interface/concurrent_collectives.h>
+#include <prnn/parallel/interface/synchronization.h>
 
-namespace lucius
+namespace prnn
 {
 namespace parallel
 {

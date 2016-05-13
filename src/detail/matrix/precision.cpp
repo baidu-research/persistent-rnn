@@ -1,11 +1,11 @@
 
 
 // Persistent RNN Includes
-#include <prnn/matrix/interface/Precision.h>
+#include <prnn/detail/matrix/precision.h>
 
-#include <prnn/util/interface/debug.h>
-#include <prnn/util/interface/memory.h>
-#include <prnn/util/interface/Knobs.h>
+#include <prnn/detail/util/debug.h>
+#include <prnn/detail/util/memory.h>
+#include <prnn/detail/util/knobs.h>
 
 namespace prnn
 {
@@ -54,7 +54,8 @@ bool Precision::operator!=(const Precision& p) const
 
 Precision Precision::getDefaultPrecision()
 {
-    auto precision = util::KnobDatabase::getKnobValue("Matrix::DefaultPrecision", "SinglePrecision");
+    auto precision = util::KnobDatabase::getKnobValue(
+        "Matrix::DefaultPrecision", "SinglePrecision");
 
     if(precision == "SinglePrecision")
     {
@@ -73,7 +74,7 @@ std::string Precision::toString() const
 {
     switch(type())
     {
-    case Half: return "HalfPrecision";
+    case Half:   return "HalfPrecision";
     case Single: return "SinglePrecision";
     case Double: return "DoublePrecision";
     default:

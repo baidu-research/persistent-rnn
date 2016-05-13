@@ -3,6 +3,8 @@
 #    \brief  The SCons master build script for the persistent RNN kernels.
 ################################################################################
 
+import os
+
 def toSharedObject(filename):
     (root, ext) = os.path.splitext(str(filename))
     return root + '.os'

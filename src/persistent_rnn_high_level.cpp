@@ -14,7 +14,6 @@ void forward_prop_recurrent(const RecurrentOpsHandle& handle,
     const Operation& activationFunction, RecurrentLayerDirection direction,
     const Matrix& weights, Matrix& activations)
 {
-
     Matrix scratch = get_forward_prop_scratch(handle, activations.size());
 
     forward_prop_recurrent(handle, activationFunction, direction, MatrixView(weights),
@@ -27,7 +26,6 @@ void back_prop_deltas_recurrent(const RecurrentOpsHandle& handle,
     const Matrix& activations,
     Matrix& deltas)
 {
-
     Matrix scratch = get_back_prop_deltas_scratch(handle, deltas.size());
 
     back_prop_deltas_recurrent(handle, activationFunction, direction, MatrixView(weights),

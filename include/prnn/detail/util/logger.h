@@ -5,13 +5,8 @@
 #include <sstream>
 #include <string>
 
-namespace logger {
-
-/// Initialize logger system. Checks environment variables for enabled logs.
-void init();
-
-/// Shutdown logger system.
-void shutdown();
+namespace prnn {
+namespace util {
 
 /// Test if a specified log is enabled.
 bool is_log_enabled(const std::string& name);
@@ -64,6 +59,7 @@ private:
     bool is_enabled_;
 };
 
-}  // namespace logger
+}
+}
 
 

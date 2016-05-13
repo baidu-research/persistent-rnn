@@ -1,7 +1,6 @@
 #pragma once
 
 namespace prnn {
-namespace detail {
 namespace types {
 
 template <class BaseType, size_t FracDigits>
@@ -48,7 +47,6 @@ public:
     }
 };
 
-}
 }
 }
 

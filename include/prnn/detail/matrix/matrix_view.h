@@ -128,6 +128,3 @@ CUDA_DECORATOR MatrixView<T> slice(const MatrixView<T>& input, const Dimension& 
 }
 
 
-
-
-

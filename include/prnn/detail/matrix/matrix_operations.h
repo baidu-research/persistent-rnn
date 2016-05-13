@@ -34,10 +34,6 @@ Matrix zeros(const Dimension& size, const Precision& precision);
 void ones(Matrix& result);
 Matrix ones(const Dimension& size, const Precision& precision);
 
-void reduceGetPositions(Matrix& result, const Matrix& input, const Dimension& d,
-    const Operation& op);
-Matrix reduceGetPositions(const Matrix& input, const Dimension& d, const Operation& op);
-
 }
 }
 }

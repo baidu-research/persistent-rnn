@@ -2,12 +2,12 @@
 
 #pragma once
 
-#include <lucius/parallel/interface/cuda.h>
+#include <prnn/detail/parallel/cuda.h>
 
 #include <cstddef>
 #include <algorithm>
 
-namespace lucius
+namespace prnn
 {
 namespace parallel
 {

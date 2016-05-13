@@ -1,7 +1,7 @@
 
 #pragma once
 
-namespace lucius
+namespace prnn
 {
 
 namespace parallel

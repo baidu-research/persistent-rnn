@@ -10,7 +10,7 @@
 #include <prnn/detail/parallel/multi_bulk_synchronous_parallel.h>
 #include <prnn/detail/parallel/shared_memory_allocator.h>
 
-#include <prnn/util/interface/metaprogramming.h>
+#include <prnn/detail/util/metaprogramming.h>
 
 // Standard Library Includes
 #include <tuple>

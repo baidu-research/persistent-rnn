@@ -6,7 +6,7 @@
 #include <memory>
 #include <string>
 
-namespace lucius
+namespace prnn
 {
 namespace matrix
 {

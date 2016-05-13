@@ -5,9 +5,9 @@
 #include <functional>
 
 // Forward Declarations
-namespace lucius { namespace parallel { class ThreadGroup; } }
+namespace prnn { namespace parallel { class ThreadGroup; } }
 
-namespace lucius
+namespace prnn
 {
 namespace parallel
 {

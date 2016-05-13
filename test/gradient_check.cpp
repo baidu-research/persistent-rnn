@@ -1,38 +1,34 @@
 
 #include <prnn/persistent_rnn_high_level.h>
 
-void TestSimpleRecurrentOps() {
-
+void TestSimpleRecurrentOps()
+{
     prnn::srand(377);
 
     int layer_size = 512;
     int timesteps  = 100;
     int mini_batch = 2;
 
-    prnn::RecurrentOpsConfig config(layer_size, mini_batch);
-    prnn::RecurrentOpsHandle handle(config);
+    prnn::RecurrentOpsHandle handle(layer_size, mini_batch, prnn::relu(), prnn::RECURENT_FORWARD);
 
     auto weights     = prnn::ones({layer_size, layer_size});
     auto activations = prnn::ones({layer_size, mini_batch, timesteps});
 
-    prnn::forward_prop_recurrent(handle, prnn::relu(), prnn::RECURRENT_FORWARD,
-                                 weights, activations);
+    prnn::forward_prop_recurrent(handle, weights, activations);
 
     auto deltas = prnn::ones(activations.size());
 
-    prnn::mbsp_back_prop_deltas_recurrent(handle, prnn::mult_drelu(),
-                                          prnn::RECURRENT_FORWARD, weights,
-                                          activations, deltas);
+    prnn::mbsp_back_prop_deltas_recurrent(handle, weights, activations, deltas);
 
     auto dWeights = prnn::ones(weights.size());
 
-    prnn::back_prop_gradients_recurrent(handle, prnn::RECURRENT_FORWARD,
-                                        activations, deltas, dWeights);
+    prnn::back_prop_gradients_recurrent(handle, activations, deltas, dWeights);
 
     // just make sure nothing crashes
 }
 
-void slice_window(prnn::Array& inputs, int window_size) {
+void slice_window(prnn::Matrix& inputs, int window_size)
+{
     int activation_count = inputs.size()[0];
     int mini_batch_size  = inputs.size()[1];
     int timesteps        = inputs.size()[2];
@@ -44,7 +40,8 @@ void slice_window(prnn::Array& inputs, int window_size) {
         {activation_size, mini_batch_size, timesteps});
 }
 
-prnn::Array extract_window(prnn::Array inputs, int window_size) {
+prnn::Matrix extract_window(prnn::Matrix inputs, int window_size)
+{
     int activation_count = inputs.size()[0];
     int mini_batch_size  = inputs.size()[1];
     int timesteps        = inputs.size()[2];
@@ -66,7 +63,8 @@ prnn::Array extract_window(prnn::Array inputs, int window_size) {
     return zeros;
 }
 
-double compute_cost(prnn::Array activations, prnn::Array reference, int window_size) {
+double compute_cost(prnn::Matrix activations, prnn::Matrix reference, int window_size)
+{
     slice_window(activations, window_size);
     slice_window(reference,   window_size);
 
@@ -78,9 +76,9 @@ double compute_cost(prnn::Array activations, prnn::Array reference, int window_s
     return 0.5 * squaredSum / activations.size()[1];
 }
 
-prnn::Array compute_deltas(prnn::Array complete_activations,
-    prnn::Array complete_reference, int window_size) {
-
+prnn::Matrix compute_deltas(prnn::Matrix complete_activations,
+    prnn::Matrix complete_reference, int window_size)
+{
     auto activations = extract_window(complete_activations, window_size);
     auto reference   = extract_window(complete_reference,   window_size);
 
@@ -90,8 +88,8 @@ prnn::Array compute_deltas(prnn::Array complete_activations,
         binary_op(prnn::minus(), activations, reference));
 }
 
-void TestSimpleRecurrentOpsGradientCheck(prnn::RecurrentLayerDirection direction) {
-
+void TestSimpleRecurrentOpsGradientCheck(prnn::RecurrentLayerDirection direction)
+{
     std::default_random_engine random_engine;
 
     random_engine.seed(377);
@@ -100,25 +98,24 @@ void TestSimpleRecurrentOpsGradientCheck(prnn::RecurrentLayerDirection direction
     prnn::srand(377);
     prnn::srandn(377);
 
-    int layer_size = 224;
-    int timesteps  = 2;
+    int layer_size = getMaximumSizeRNNForThisGPU();
+    int timesteps  = 10;
     int mini_batch = 2;
-    int samples    = 4;
+    int samples    = 20;
 
-    int window_rows    = 224;
-    int window_columns = 224;
+    int window_rows    = layer_size;
+    int window_columns = layer_size;
     int window_outputs = window_rows;
 
     samples = std::min(window_rows * window_columns, samples);
 
-    // note that we are testing the persistent kernels here
     prnn::RecurrentOpsConfig config(layer_size, mini_batch);
     prnn::RecurrentOpsHandle handle(config);
 
-    prnn::Array weights = prnn::zeros({layer_size, layer_size});
+    prnn::Matrix weights = prnn::zeros({layer_size, layer_size});
     auto weights_slice = slice(weights, {0, 0}, {window_rows, window_columns});
 
-    prnn::copy(prnn::randn({window_rows, window_columns)), weights_slice);
+    prnn::copy(prnn::randn({window_rows, window_columns}), weights_slice);
 
     prnn::unary_op(prnn::scalar_multiplies(1.0e-2), weights, weights);
 
@@ -133,10 +130,10 @@ void TestSimpleRecurrentOpsGradientCheck(prnn::RecurrentLayerDirection direction
                      {window_outputs, mini_batch, timesteps}));
 
     prnn::copy(
-        prnn::rand({window_outputs, mini_batch, timesteps)),
+        prnn::rand({window_outputs, mini_batch, timesteps}),
         prnn::slice(reference_activations,
-                    {0, 0, 0),
-                    {window_outputs, mini_batch, timesteps)));
+                    {0, 0, 0},
+                    {window_outputs, mini_batch, timesteps}));
 
     auto output_activations = copy(input_activations);
 
@@ -165,12 +162,12 @@ void TestSimpleRecurrentOpsGradientCheck(prnn::RecurrentLayerDirection direction
                        {window_outputs, mini_batch * timesteps}));
 
     double cost = compute_cost(output_activations, reference_activations, window_outputs);
-    prnn::Array<Real, 3> deltas = compute_deltas(output_activations, reference_activations,
+    prnn::Matrix<Real, 3> deltas = compute_deltas(output_activations, reference_activations,
         window_outputs);
 
     logger::log("TestRecurrent") << "Input Deltas " << prnn::preview_array(
         prnn::reshape(prnn::copy(prnn::slice(deltas,
-                                                {0,0,0),
+                                                {0,0,0},
                                                 {window_outputs, mini_batch,
                                                                 timesteps})),
                        {window_outputs, mini_batch * timesteps}));
@@ -178,16 +175,16 @@ void TestSimpleRecurrentOpsGradientCheck(prnn::RecurrentLayerDirection direction
     prnn::back_prop_deltas_recurrent(handle, prnn::mult_drelu(),
         direction, weights, output_activations, deltas);
 
-    prnn::Array<Real, 2> dWeights = prnn::ones<Real>(weights.size());
+    prnn::Matrix dWeights = prnn::ones(weights.size());
 
     prnn::back_prop_gradients_recurrent(handle, direction,
         output_activations, deltas, dWeights);
 
     logger::log("TestRecurrent") << "Output Deltas " << prnn::preview_array(
         prnn::reshape(prnn::copy(prnn::slice(deltas,
-                                                {0,0,0},
-                                                {window_outputs, mini_batch,
-                                                               timesteps))),
+                                             {0,0,0},
+                                             {window_outputs, mini_batch,
+                                                            timesteps})),
                        {window_outputs, mini_batch * timesteps}));
     logger::log("TestRecurrent") << "dWeights      " << prnn::preview_array(dWeights);
 
@@ -212,8 +209,7 @@ void TestSimpleRecurrentOpsGradientCheck(prnn::RecurrentLayerDirection direction
         Real original_value = weights [{sample_row, sample_column}];
         Real gradient       = dWeights[{sample_row, sample_column}];
 
-        set(weights, {sample_row, sample_column),
-            static_cast<Real>(original_value - epsilon));
+        weights[sample_row, sample_column] = original_value - epsilon;
 
         logger::log("TestRecurrent") << "Updated Input Weight (" << sample_row << ", "
             << sample_column << ")     from " << original_value << " to "
@@ -266,14 +262,16 @@ void TestSimpleRecurrentOpsGradientCheck(prnn::RecurrentLayerDirection direction
 
         double scaled_difference = (total == 0.0) ? difference : (difference / total);
 
-        if (absolute_difference > 1e-3 || !std::isfinite(local_difference)) {
+        if (absolute_difference > 1e-3 || !std::isfinite(local_difference))
+        {
             logger::log("TestRecurrent") << "For weight (" << sample_row << ", " << sample_column
                 << ") computed gradient " << gradient << " does not match estimated gradient "
                 << numerical_gradient << ", cost " << cost << " left cost "
                 << left_cost << ", right cost " << right_cost <<  ", " << local_difference
                 << " difference, " << scaled_difference<< " scaled difference\n";
         }
-        else {
+        else
+        {
             logger::log("TestRecurrent") << "For weight (" << sample_row << ", " << sample_column
                 << ") computed gradient " << gradient << " matches estimated gradient "
                 << numerical_gradient << "\n";
@@ -286,30 +284,36 @@ void TestSimpleRecurrentOpsGradientCheck(prnn::RecurrentLayerDirection direction
     ASSERT_GEQUAL(difference, 1e-16);
 }
 
-void TestRecurrentOpsGradientCheckHelper(prnn::RecurrentLayerDirection d) {
+void TestRecurrentOpsGradientCheckHelper(prnn::RecurrentLayerDirection d)
+{
     TestSimpleRecurrentOpsGradientCheck(d);
 }
 
-void TestRecurrentOpsGradientCheck() {
+void TestRecurrentOpsGradientCheck()
+{
     TestRecurrentOpsGradientCheckHelper(prnn::RECURRENT_FORWARD);
 }
 
-void TestReverseRecurrentOpsGradientCheck() {
+void TestReverseRecurrentOpsGradientCheck()
+{
     TestRecurrentOpsGradientCheckHelper(prnn::RECURRENT_REVERSE);
 }
 
-void RunTest(const std::string& testName, void(*)(void) function) {
-    try {
+void RunTest(const std::string& testName, void(*)(void) function)
+{
+    try
+    {
         function();
         std::cout << "Test " << testName << " Passed\n";
     }
-    catch(std::exception& e) {
+    catch(std::exception& e)
+    {
         std::cout << "Test " << testName << " Failed\n";
     }
 }
 
-int main(int argc, char** argv) {
-
+int main(int argc, char** argv)
+{
     RunTest("Recurrent Forward Ops Gradient Check", TestRecurrentOpsGradientCheck());
     RunTest("Recurrent Reverse Ops Gradient Check", TestReverseRecurrentOpsGradientCheck());
 

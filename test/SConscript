@@ -6,7 +6,7 @@
 
 Import('env')
 
-lucius_libs = env['PRNN_LIBS']
+prnn_libs = env['PRNN_LIBS']
 
 programs = []
 

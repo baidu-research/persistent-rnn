@@ -7,7 +7,7 @@
 #define CUDA_DECORATOR
 #endif
 
-namespace lucius
+namespace prnn
 {
 namespace parallel
 {

@@ -1,13 +1,13 @@
 
 #pragma once
 
-// Lucius Includes
-#include <lucius/parallel/interface/cuda.h>
+// Persistent RNN Includes
+#include <prnn/detail/parallel/cuda.h>
 
 // Standard Library Includes
 #include <cstddef>
 
-namespace lucius
+namespace prnn
 {
 namespace parallel
 {
@@ -23,7 +23,7 @@ public:
 }
 }
 
-#include <lucius/parallel/implementation/SharedMemoryAllocator.inl>
+#include "shared_memory_allocator.inl"
 
 
 

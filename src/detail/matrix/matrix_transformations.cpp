@@ -1,11 +1,11 @@
 
 
 // Persistent RNN Includes
-#include <prnn/matrix/interface/MatrixTransformations.h>
+#include <prnn/detail/matrix/matrix_transformations.h>
 
-#include <prnn/matrix/interface/Matrix.h>
-#include <prnn/matrix/interface/DimensionTransformations.h>
-#include <prnn/matrix/interface/CopyOperations.h>
+#include <prnn/detail/matrix/matrix.h>
+#include <prnn/detail/matrix/dimension_transformations.h>
+#include <prnn/detail/matrix/copy_operations.h>
 
 // Standard Library Includes
 #include <set>
