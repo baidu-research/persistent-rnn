@@ -1,53 +1,79 @@
 #pragma once
 
-// Majel Includes
-#include <majel/recurrent/detail/recurrent_op_types.h>
-
 // Standard Library Includes
 #include <map>
 #include <memory>
 #include <string>
 
-namespace prnn {
+// Forward Declarations
+namespace prnn { namespace matrix { class Operation; } }
 
-enum RecurrentLayerDirection {
+namespace prnn
+{
+
+enum RecurrentLayerDirection
+{
     RECURRENT_FORWARD,
     RECURRENT_REVERSE
 };
 
-class RecurrentOpsConfig {
+class RecurrentActivationFunction
+{
 public:
-    RecurrentOpsConfig(size_t layer_size, size_t mini_batch_, bool allow_persistent_kernels_,
-        double skip_connection_scale = 0.0) :
-
-        layer_size(layer_size),
-        mini_batch_size(mini_batch_),
-        allow_persistent_kernels(allow_persistent_kernels_),
-        skip_connection_scale(skip_connection_scale)
-    {}
+    RecurrentActivationFunction();
+    ~RecurrentActivationFunction();
 
 public:
-    size_t layer_size;
-    size_t mini_batch_size;
-    bool   allow_persistent_kernels;
-    double skip_connection_scale;
+    RecurrentActivationFunction(const RecurrentActivationFunction&);
+    RecurrentActivationFunction& operator=(const RecurrentActivationFunction&);
+
+
+public:
+    std::unique_ptr<matrix::Operation> forwardOperation;
+    std::unique_ptr<matrix::Operation> reverseOperation;
 
 };
 
-/*! \brief A handle to store state associated with recurrent ops */
-class RecurrentOpsHandle {
+class RecurrentRectifiedLinear : public RecurrentActivationFunction
+{
 public:
-    explicit RecurrentOpsHandle(RecurrentOpsConfig config_);
+    RecurrentRectifiedLinear();
+
+};
+
+class RecurrentHyperbolicTangent : public RecurrentActivationFunction
+{
+public:
+    RecurrentHyperbolicTangent();
+};
+
+/*! \brief A single handle to store configuration data for a recurrent operation. */
+class RecurrentOpsHandle
+{
+public:
+    RecurrentOpsHandle(size_t layerSize, size_t miniBatchSize,
+        const RecurrentActivationFunction& activationFunction,
+        RecurrentLayerDirection direction,
+        bool allowPersistentKernels = true,
+        double skipConnectionScale = 0.0) :
+
+        layerSize(layerSize),
+        miniBatchSize(miniBatchSize),
+        allowPersistentKernels(allowPersistentKernels),
+        skipConnectionScale(skipConnectionScale),
+        activationFunction(activationFunction),
+        direction(direction)
+    {}
 
 public:
-    DDim get_weight_dimensions() const;
+    size_t layerSize;
+    size_t miniBatchSize;
+    bool   allowPersistentKernels;
+    double skipConnectionScale;
 
 public:
-    bool are_persistent_kernels_allowed(int device) const;
-    bool are_sass_kernels_allowed(int device) const;
-
-public:
-    RecurrentOpsConfig config;
+    RecurrentActivationFunction activationFunction;
+    RecurrentLayerDirection     direction;
 };
 
 }

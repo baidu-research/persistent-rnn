@@ -8,6 +8,7 @@
 #include <prnn/detail/parallel/cuda.h>
 
 #include <prnn/detail/util/casts.h>
+#include <prnn/detail/util/logger.h>
 
 // System-Specific Includes
 #include <dlfcn.h>

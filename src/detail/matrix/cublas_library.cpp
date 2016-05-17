@@ -6,8 +6,10 @@
 #include <prnn/detail/matrix/cublas_library.h>
 
 #include <prnn/detail/parallel/cuda.h>
+#include <prnn/detail/parallel/assert.h>
 
 #include <prnn/detail/util/casts.h>
+#include <prnn/detail/util/logger.h>
 
 // Standard Library Includes
 #include <stdexcept>

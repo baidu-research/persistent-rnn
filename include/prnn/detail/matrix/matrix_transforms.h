@@ -10,8 +10,6 @@ namespace prnn { namespace matrix { class Dimension; } }
 
 namespace prnn
 {
-namespace detail
-{
 namespace matrix
 {
 
@@ -26,7 +24,6 @@ Matrix reshape(const Matrix& input, const Dimension& size);
 
 Matrix concatenate(const Matrix& left, const Matrix& right, size_t dimension);
 
-}
 }
 }
 

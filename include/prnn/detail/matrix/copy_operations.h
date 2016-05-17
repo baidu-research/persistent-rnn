@@ -11,7 +11,7 @@ namespace prnn
 namespace matrix
 {
 
-void copy(Matrix& result, const Matrix& input);
+void copy(const Matrix& result, const Matrix& input);
 Matrix copy(const Matrix& input);
 
 Matrix copy(const Matrix& input, const Precision&);

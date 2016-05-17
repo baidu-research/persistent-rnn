@@ -2,8 +2,8 @@
 #pragma once
 
 // Persistent RNN Includes
-#include <prnn/detail/cuda.h>
-#include <prnn/detail/matrix/Dimension.h>
+#include <prnn/detail/parallel/cuda.h>
+#include <prnn/detail/matrix/dimension.h>
 
 namespace prnn
 {
@@ -32,6 +32,6 @@ CUDA_DECORATOR inline const void* getAddress(const Dimension& stride, const Dime
 }
 }
 
-#include <prnn/detail/matrix/dimension_transformations.inl>
+#include "dimension_transformations.inl"
 
 

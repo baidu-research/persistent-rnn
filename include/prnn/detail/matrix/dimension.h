@@ -2,10 +2,10 @@
 #pragma once
 
 // Persistent RNN Includes
-#include <prnn/detail/cuda/cuda.h>
-#include <prnn/detail/util/assert.h>
+#include <prnn/detail/parallel/cuda.h>
+#include <prnn/detail/parallel/assert.h>
 
-#include <prnn/persistent_rnn.h>
+#include <persistent_rnn.h>
 
 // Standard Library Includes
 #include <string>
@@ -45,6 +45,7 @@ public:
     CUDA_DECORATOR inline void pop_back(size_t );
 
     CUDA_DECORATOR inline void resize(size_t );
+    CUDA_DECORATOR inline void clear();
 
 public:
     CUDA_DECORATOR inline size_t size() const;
@@ -91,7 +92,7 @@ private:
     template<typename T>
     CUDA_DECORATOR inline void fill(Storage& storage, size_t& arity, T argument)
     {
-        ASSERT(arity < capacity);
+        assert(arity < capacity);
         storage[arity++] = argument;
     }
 

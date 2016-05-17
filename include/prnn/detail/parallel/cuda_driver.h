@@ -7,7 +7,7 @@
 #pragma once
 
 // Persistent RNN Includes
-#include <prnn/parallel/interface/CudaDriverTypes.h>
+#include <prnn/detail/parallel/cuda_driver_types.h>
 
 // Standard Library Includes
 #include <cstring>

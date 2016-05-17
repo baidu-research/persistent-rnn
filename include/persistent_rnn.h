@@ -52,7 +52,8 @@ prnnStatus_t prnnGetStream (prnnHandle_t handle, cudaStream_t* streamId);
 
 /* Data structures to represent input data and the Neural Network Layer */
 typedef struct prnnTensorStruct* prnnTensorDescriptor_t;
-typedef struct prnnFilterStruct* prnnFilterDescriptor_t;
+typedef struct prnnTensorStruct* prnnFilterDescriptor_t;
+typedef struct prnnDropoutStruct* prnnDropoutDescriptor_t;
 
 /*
 * PRNN data type
@@ -270,7 +271,7 @@ prnnStatus_t prnnRNNBackwardWeights(prnnHandle_t handle,
                                     size_t reserveSpaceSizeInBytes);
 
 #if defined (__cplusplus)
-extern "C" }
+}
 #endif
 
 #endif

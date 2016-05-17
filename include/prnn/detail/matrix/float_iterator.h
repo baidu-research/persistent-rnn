@@ -2,8 +2,8 @@
 #pragma once
 
 // Persistent RNN Includes
-#include <prnn/matrix/interface/FloatReference.h>
-#include <prnn/matrix/interface/Dimension.h>
+#include <prnn/detail/matrix/float_reference.h>
+#include <prnn/detail/matrix/dimension.h>
 
 namespace prnn
 {

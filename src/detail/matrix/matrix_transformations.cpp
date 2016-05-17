@@ -1,7 +1,7 @@
 
 
 // Persistent RNN Includes
-#include <prnn/detail/matrix/matrix_transformations.h>
+#include <prnn/detail/matrix/matrix_transforms.h>
 
 #include <prnn/detail/matrix/matrix.h>
 #include <prnn/detail/matrix/dimension_transformations.h>

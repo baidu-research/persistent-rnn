@@ -1,16 +1,25 @@
-#include <prnn/detail/util/logger.h>
 
-#include <mutex>
-#include <string>
-#include <unordered_set>
+// Persistent RNN Includes
+#include <prnn/detail/util/logger.h>
 
 #include <prnn/detail/util/timer.h>
 #include <prnn/detail/util/string.h>
 
-namespace prnn {
-namespace util {
+// Standard Library Includes
+#include <mutex>
+#include <string>
+#include <unordered_set>
+#include <iostream>
 
-class LogDatabase {
+namespace prnn
+{
+namespace util
+{
+namespace detail
+{
+
+class LogDatabase
+{
 public:
     LogDatabase() : enable_all(false) { timer.start(); }
 
@@ -25,15 +34,18 @@ public:
     Timer     timer;
 
 public:
-    bool is_enabled(const std::string& log_name) const {
+    bool is_enabled(const std::string& log_name) const
+    {
         return enable_all || (enabled_logs.count(log_name) != 0);
     }
 };
 
 std::unique_ptr<LogDatabase> the_database;
 
-LogDatabase& get_database() {
-    if(!the_database) {
+LogDatabase& get_database()
+{
+    if(!the_database)
+    {
         the_database.reset(new LogDatabase);
     }
 
@@ -51,7 +63,7 @@ std::string logger_time() {
     return stream.str();
 }
 
-}  // namespace detail
+} // namespace detail
 
 std::mutex log_writer;
 
@@ -80,7 +92,7 @@ bool is_log_enabled(const std::string& name) {
 }
 
 void enable_specific_logs(const std::string& modules) {
-    auto individual_modules = support::split(modules, ",");
+    auto individual_modules = split(modules, ",");
 
     for (auto& module : individual_modules) {
         enable_log(module);
@@ -99,5 +111,6 @@ void enable_log(const std::string& name) {
     detail::get_database().enabled_logs.insert(name);
 }
 
+}
 }
 

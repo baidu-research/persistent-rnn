@@ -274,7 +274,7 @@ def BuildEnvironment():
 
     # set the build path
     env.Replace(BUILD_ROOT = str(env.Dir('.').abspath))
-    env.AppendUnique(CPPPATH = env['BUILD_ROOT'])
+    env.AppendUnique(CPPPATH = os.path.join(env['BUILD_ROOT'], 'include'))
 
     # set prnn include path
     if env['install']:

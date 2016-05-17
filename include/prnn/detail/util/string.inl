@@ -34,12 +34,12 @@ inline StringVector split(const std::string& string, const std::string& delimite
     return strings;
 }
 
-inline bool is_whitespace(char c)
+inline bool isWhitespace(char c)
 {
     return c == ' ' || c == '\t' || c == '\n' || c == '\r';
 }
 
-inline std::string remove_whitespace(const std::string& string)
+inline std::string removeWhitespace(const std::string& string)
 {
     std::string result;
 
@@ -47,7 +47,7 @@ inline std::string remove_whitespace(const std::string& string)
 
     for( ; begin != string.end(); ++begin)
     {
-        if(!is_whitespace(*begin)) break;
+        if(!isWhitespace(*begin)) break;
     }
 
     auto end = string.end();
@@ -58,7 +58,7 @@ inline std::string remove_whitespace(const std::string& string)
 
         for( ; end != begin; --end)
         {
-            if(!is_whitespace(*end))
+            if(!isWhitespace(*end))
             {
                 break;
             }

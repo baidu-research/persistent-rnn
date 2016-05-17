@@ -9,8 +9,6 @@ namespace prnn { namespace matrix { class Dimension; } }
 
 namespace prnn
 {
-namespace detail
-{
 namespace matrix
 {
 
@@ -34,7 +32,6 @@ Matrix zeros(const Dimension& size, const Precision& precision);
 void ones(Matrix& result);
 Matrix ones(const Dimension& size, const Precision& precision);
 
-}
 }
 }
 

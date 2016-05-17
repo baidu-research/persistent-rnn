@@ -6,7 +6,7 @@
 #include <cstdint>
 #include <cstddef>
 
-namespace lucius
+namespace prnn
 {
 namespace matrix
 {

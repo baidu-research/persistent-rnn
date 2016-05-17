@@ -1,16 +1,14 @@
 /*  \file   Matrix.h
-    \date   Sunday August 11, 2013
-    \author Gregory Diamos <solusstultus@gmail.com>
     \brief  The header file for the Matrix class.
 */
 
 #pragma once
 
 // Persistent RNN Includes
-#include <prnn/detail/matrix/FloatReference.h>
-#include <prnn/detail/matrix/FloatIterator.h>
-#include <prnn/detail/matrix/Dimension.h>
-#include <prnn/detail/matrix/Precision.h>
+#include <prnn/detail/matrix/float_reference.h>
+#include <prnn/detail/matrix/float_iterator.h>
+#include <prnn/detail/matrix/dimension.h>
+#include <prnn/detail/matrix/precision.h>
 
 // Standard Library Includes
 #include <string>

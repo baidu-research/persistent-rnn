@@ -2,9 +2,9 @@
 #pragma once
 
 // Lucius Includes
-#include <prnn/matrix/interface/DimensionTransformations.h>
+#include <prnn/detail/matrix/dimension_transformations.h>
 
-#include <prnn/parallel/interface/ScalarOperations.h>
+#include <prnn/detail/parallel/scalar_operations.h>
 
 namespace prnn
 {

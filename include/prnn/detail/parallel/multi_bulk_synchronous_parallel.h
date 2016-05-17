@@ -1,8 +1,8 @@
 
 #pragma once
 
-#include <prnn/parallel/interface/concurrent_collectives.h>
-#include <prnn/parallel/interface/synchronization.h>
+#include <prnn/detail/parallel/concurrent_collectives.h>
+#include <prnn/detail/parallel/synchronization.h>
 
 namespace prnn
 {

@@ -8,13 +8,13 @@
 #include <prnn/detail/matrix/matrix.h>
 #include <prnn/detail/matrix/allocation.h>
 #include <prnn/detail/matrix/dimension_transformations.h>
-#include <prnn/detail/matrix/matrix_transformations.h>
+#include <prnn/detail/matrix/matrix_transforms.h>
 #include <prnn/detail/matrix/matrix_operations.h>
 #include <prnn/detail/matrix/operation.h>
 
 #include <prnn/detail/parallel/synchronization.h>
 
-#include <prnn/detail/util/debug.h>
+#include <prnn/detail/util/logger.h>
 
 // Standard Library Includes
 #include <cmath>

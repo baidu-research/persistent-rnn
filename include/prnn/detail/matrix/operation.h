@@ -4,17 +4,17 @@
 // Persistent RNN Includes
 #include <prnn/detail/types/float16.h>
 
-#include <prnn/parallel/interface/cuda.h>
-#include <prnn/parallel/interface/ScalarOperations.h>
+#include <prnn/detail/parallel/cuda.h>
+#include <prnn/detail/parallel/scalar_operations.h>
 
-#include <prnn/matrix/interface/DimensionTransformations.h>
+#include <prnn/detail/matrix/dimension_transformations.h>
 
 // Standard Library Includes
 #include <cmath>
 #include <algorithm>
 
 namespace prnn {
-namespace types {
+namespace matrix {
 
 /*! \brief A class for specifying basic matrix operations. */
 class Operation
@@ -35,6 +35,8 @@ public:
         SigmoidDerivative,
         RectifiedLinear,
         RectifiedLinearDerivative,
+        Tanh,
+        TanhDerivative,
         KLDivergence,
         KLDivergenceDerivative,
         Negate,
@@ -696,79 +698,40 @@ public:
 
 };
 
-struct RectifiedLinear {
-    template<typename T>
-    CUDA_DECORATOR T operator()(const T& x) const {
-        return maximum()(T(0.0), minimum()(T(20.0), x));
+class Tanh : public Operation
+{
+public:
+    CUDA_DECORATOR Tanh() : Operation(Operation::Tanh)
+    {
+
     }
 
-    CUDA_DECORATOR float16 operator()(const float16& x) const {
-        float tmp = x.to_float();
-        return float16(relu()(tmp));
-    }
-};
-
-struct Tanh {
+public:
     template<typename T>
-    CUDA_DECORATOR T operator()(const T& x) const {
+    CUDA_DECORATOR T operator()(const T& x) const
+    {
         return std::tanh(x);
     }
-
-    CUDA_DECORATOR float operator()(const int& x) const {
-        return std::tanh(static_cast<float>(x));
-    }
-
-    CUDA_DECORATOR float16 operator()(const float16& x) const {
-        return float16(std::tanh(x.to_float()));
-    }
 };
 
-struct RectifiedLinearDerivative {
+class TanhDerivative : public Operation
+{
+public:
+    CUDA_DECORATOR TanhDerivative() : Operation(Operation::TanhDerivative)
+    {
+
+    }
+
+public:
     template<typename T, typename U>
-    CUDA_DECORATOR auto operator()(const T& x, const U& y) const -> decltype(x*y) {
-        return (((x > 0.0) && (x < 20.0)) * y);
-    }
-
-    template<typename T>
-    CUDA_DECORATOR T operator()(const T& x, const T& y) const {
-        return (((x > T(0.0)) && (x < T(20.0))) * y);
-    }
-
-    CUDA_DECORATOR float16 operator()(const float16& x, const float16 &y) const {
-        return float16(mult_drelu()(x.to_float(), y.to_float()));
-    }
-
-     CUDA_DECORATOR float operator()(const float16& x, const float& y) const {
-        return mult_drelu()(x.to_float(), y);
-    }
-
-     CUDA_DECORATOR float operator()(const float& x, const float16& y) const {
-        return mult_drelu()(x, y.to_float());
-    }
-
-};
-
-struct TanhDerivative {
-    template<typename T, typename U>
-    CUDA_DECORATOR auto operator()(const T& x, const U& y) const -> decltype(x*y) {
+    CUDA_DECORATOR auto operator()(const T& x, const U& y) const -> decltype(x*y)
+    {
         return ((1 - x * x) * y);
     }
 
     template<typename T>
     CUDA_DECORATOR T operator()(const T& x, const T& y) const {
         return T((T(1) - x * x) * y);
-    }
-
-    CUDA_DECORATOR float16 operator()(const float16& x, const float16& y) const {
-        return float16(mult_dtanh()(x.to_float(), y.to_float()));
-    }
-
-    CUDA_DECORATOR float operator()(const float16& x, const float& y) const {
-        return mult_dtanh()(x.to_float(), y);
-    }
-
-    CUDA_DECORATOR float operator()(const float& x, const float16& y) const {
-        return mult_dtanh()(x, y.to_float());
     }
 
 };
@@ -786,7 +749,7 @@ typedef std::tuple<Add, Subtract, Multiply, Divide, Maximum, Minimum,
 
 typedef std::tuple<Add, Subtract, Multiply, Divide, Log, Exp, Pow, Abs, Sqrt, RectifiedLinear,
                    RectifiedLinearDerivative, Sigmoid, SigmoidDerivative, Negate, Maximum,
-                   Minimum, Equal, LessThan, NotEqual, Fill, Square, SquareAndScale, Inverse,
+                   Minimum, Equal, LessThan, NotEqual, Fill, Square, SquareAndScale, Inverse
                    > AllUnaryOperations;
 
 }

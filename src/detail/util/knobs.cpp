@@ -3,10 +3,10 @@
 */
 
 // Persistent RNN Includes
-#include <prnn/util/interface/Knobs.h>
-#include <prnn/util/interface/KnobFile.h>
+#include <prnn/detail/util/knobs.h>
+#include <prnn/detail/util/knob_file.h>
 
-#include <prnn/util/interface/system_compatibility.h>
+#include <prnn/detail/util/system_compatibility.h>
 
 // Standard Library Includes
 #include <stdexcept>

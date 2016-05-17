@@ -33,11 +33,15 @@ CUDA_DECORATOR void Dimension::push_back(size_t size)
     _storage[_arity++] = size;
 }
 
-
 CUDA_DECORATOR void Dimension::resize(size_t size)
 {
     assert(_arity < capacity);
     _arity = size;
+}
+
+CUDA_DECORATOR void Dimension::clear()
+{
+    resize(0);
 }
 
 CUDA_DECORATOR void Dimension::pop_back()

@@ -4,7 +4,9 @@
 
 // Persistent RNN Includes
 #include <prnn/detail/matrix/atlas_library.h>
+
 #include <prnn/detail/util/casts.h>
+#include <prnn/detail/util/logger.h>
 
 // Standard Library Includes
 #include <stdexcept>

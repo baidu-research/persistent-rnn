@@ -5,12 +5,111 @@
 #include <prnn/detail/matrix/dimension.h>
 #include <prnn/detail/matrix/dimension_transformations.h>
 
-#include <prnn/parallel/interface/cuda.h>
+#include <prnn/detail/parallel/cuda.h>
 
 namespace prnn
 {
 namespace matrix
 {
+
+class DynamicView
+{
+public:
+    DynamicView(Matrix& matrix)
+    : _data(matrix.data()), _size(matrix.size()), _stride(matrix.stride())
+    {
+
+    }
+
+    CUDA_DECORATOR DynamicView(void* data, const Dimension& size, const Dimension& stride)
+    : _data(data), _size(size), _stride(stride)
+    {
+
+    }
+
+public:
+    CUDA_DECORATOR const Dimension& size() const
+    {
+        return _size;
+    }
+
+    CUDA_DECORATOR const Dimension& stride() const
+    {
+        return _stride;
+    }
+
+public:
+    CUDA_DECORATOR size_t linearAddress(const Dimension& d) const
+    {
+        return dotProduct(d, _stride);
+    }
+
+public:
+    template <typename T>
+    CUDA_DECORATOR T& get(const Dimension& d)
+    {
+        return static_cast<T*>(_data)[linearAddress(d)];
+    }
+
+    template <typename T>
+    CUDA_DECORATOR const T& get(const Dimension& d) const
+    {
+        return static_cast<const T*>(_data)[linearAddress(d)];
+    }
+
+private:
+    void*     _data;
+    Dimension _size;
+    Dimension _stride;
+
+};
+
+class ConstDynamicView
+{
+public:
+    ConstDynamicView(const Matrix& matrix)
+    : _data(matrix.data()), _size(matrix.size()), _stride(matrix.stride())
+    {
+
+    }
+
+    CUDA_DECORATOR ConstDynamicView(const void* data,
+        const Dimension& size, const Dimension& stride)
+    : _data(data), _size(size), _stride(stride)
+    {
+
+    }
+
+public:
+    CUDA_DECORATOR const Dimension& size() const
+    {
+        return _size;
+    }
+
+    CUDA_DECORATOR const Dimension& stride() const
+    {
+        return _stride;
+    }
+
+public:
+    CUDA_DECORATOR size_t linearAddress(const Dimension& d) const
+    {
+        return dotProduct(d, _stride);
+    }
+
+public:
+    template <typename T>
+    CUDA_DECORATOR const T& get(const Dimension& d) const
+    {
+        return static_cast<const T*>(_data)[linearAddress(d)];
+    }
+
+private:
+    const void* _data;
+    Dimension   _size;
+    Dimension   _stride;
+
+};
 
 template<typename T>
 class MatrixView

@@ -3,45 +3,71 @@
     \brief C++ language interface to persistent RNN kernels.
 */
 
-#pragma once
-
 // Persistent RNN Includes
 #include <persistent_rnn_high_level.h>
 
-namespace prnn {
+#include <prnn/detail/matrix/matrix_view.h>
 
-void forward_prop_recurrent(const RecurrentOpsHandle& handle,
-    const Operation& activationFunction, RecurrentLayerDirection direction,
-    const Matrix& weights, Matrix& activations)
+#include <prnn/detail/rnn/recurrent_ops_handle.h>
+#include <prnn/detail/rnn/recurrent_ops.h>
+
+namespace prnn
 {
-    Matrix scratch = get_forward_prop_scratch(handle, activations.size());
 
-    forward_prop_recurrent(handle, activationFunction, direction, MatrixView(weights),
-        MatrixView(activations), MatrixView(scratch));
+static matrix::Matrix getForwardPropScratch(const RecurrentOpsHandle& handle,
+    const matrix::Dimension& dimension, const matrix::Precision& precision)
+{
+    return matrix::Matrix(dimension, precision);
 }
 
-void back_prop_deltas_recurrent(const RecurrentOpsHandle& handle,
-    const Operation& activationFunction, RecurrentLayerDirection direction,
-    const Matrix& weights,
-    const Matrix& activations,
-    Matrix& deltas)
+void forwardPropRecurrent(matrix::Matrix& activations,
+    const matrix::Matrix& weights, const RecurrentOpsHandle& handle)
 {
-    Matrix scratch = get_back_prop_deltas_scratch(handle, deltas.size());
+    auto scratch = getForwardPropScratch(handle, activations.size(), activations.precision());
 
-    back_prop_deltas_recurrent(handle, activationFunction, direction, MatrixView(weights),
-        MatrixView(activations), MatrixView(deltas), MatrixView(scratch));
+    prnn::rnn::forwardPropRecurrent(matrix::DynamicView(activations),
+        matrix::ConstDynamicView(weights),
+        matrix::DynamicView(scratch), handle);
 }
 
-void back_prop_gradients_recurrent(const RecurrentOpsHandle& handle,
-    RecurrentLayerDirection direction,
-    const Matrix& activations,
-    const Matrix& deltas,
-    Matrix& dWeights)
+static matrix::Matrix getBackPropDeltasScratch(const RecurrentOpsHandle& handle,
+    const matrix::Dimension& dimension, const matrix::Precision& precision)
 {
-    Matrix scratch = get_back_prop_gradients_scratch(handle, activations.size());
+    return matrix::Matrix(dimension, precision);
+}
 
-    back_prop_gradients_recurrent(handle, direction, MatrixView(activations),
-        MatrixView(deltas), MatrixView(dWeights), MatrixView(scratch));
+void backPropDeltasRecurrent(matrix::Matrix& deltas,
+    const matrix::Matrix& weights,
+    const matrix::Matrix& activations,
+    const RecurrentOpsHandle& handle)
+{
+    auto scratch = getBackPropDeltasScratch(handle, deltas.size(), activations.precision());
+
+    prnn::rnn::backPropDeltasRecurrent(matrix::DynamicView(deltas),
+        matrix::ConstDynamicView(weights),
+        matrix::ConstDynamicView(activations),
+        matrix::DynamicView(scratch),
+        handle);
+}
+
+static matrix::Matrix getBackPropGradientsScratch(const RecurrentOpsHandle& handle,
+    const matrix::Dimension& dimension, const matrix::Precision& precision)
+{
+    return matrix::Matrix(dimension, precision);
+}
+
+void backPropGradientsRecurrent(matrix::Matrix& dWeights,
+    const matrix::Matrix& activations,
+    const matrix::Matrix& deltas,
+    const RecurrentOpsHandle& handle)
+{
+    auto scratch = getBackPropGradientsScratch(handle, activations.size(),
+        activations.precision());
+
+    prnn::rnn::backPropGradientsRecurrent(matrix::DynamicView(dWeights),
+        matrix::ConstDynamicView(activations),
+        matrix::ConstDynamicView(deltas),
+        matrix::DynamicView(scratch), handle);
 }
 
 }

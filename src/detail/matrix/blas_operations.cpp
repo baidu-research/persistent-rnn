@@ -7,7 +7,7 @@
 
 #include <prnn/detail/parallel/synchronization.h>
 
-#include <prnn/detail/util/debug.h>
+#include <prnn/detail/util/logger.h>
 
 namespace prnn
 {
@@ -68,8 +68,8 @@ void gemm(Matrix& result, double beta,
         {
             float alphaCopy = alpha;
             float betaCopy  = beta;
-
-            CublasLibrary::cublasSgemm(transposeLeft ? CublasLibrary::CUBLAS_OP_T : CublasLibrary::CUBLAS_OP_N,
+            CublasLibrary::cublasSgemm(transposeLeft ?
+                CublasLibrary::CUBLAS_OP_T : CublasLibrary::CUBLAS_OP_N,
                 transposeRight ? CublasLibrary::CUBLAS_OP_T : CublasLibrary::CUBLAS_OP_N,
                 m, n, k, &alphaCopy,
                 static_cast<const float*>(left.data()),   lda,
@@ -78,7 +78,8 @@ void gemm(Matrix& result, double beta,
         }
         else if(left.precision() == DoublePrecision())
         {
-            CublasLibrary::cublasDgemm(transposeLeft ? CublasLibrary::CUBLAS_OP_T : CublasLibrary::CUBLAS_OP_N,
+            CublasLibrary::cublasDgemm(transposeLeft ?
+                CublasLibrary::CUBLAS_OP_T : CublasLibrary::CUBLAS_OP_N,
                 transposeRight ? CublasLibrary::CUBLAS_OP_T : CublasLibrary::CUBLAS_OP_N,
                 m, n, k, &alpha,
                 static_cast<const double*>(left.data()),   lda,
@@ -87,7 +88,7 @@ void gemm(Matrix& result, double beta,
         }
         else
         {
-            assertM(false, "Precision not implemented.");
+            throw std::runtime_error("Precision not implemented.");
         }
     }
     else if(AtlasLibrary::loaded())
@@ -114,12 +115,12 @@ void gemm(Matrix& result, double beta,
         }
         else
         {
-            assertM(false, "Precision not implemented.");
+            throw std::runtime_error("Precision not implemented.");
         }
     }
     else
     {
-        assertM(false, "Fallback GEMM not implemented.");
+        throw std::runtime_error("Fallback GEMM not implemented.");
     }
 }
 

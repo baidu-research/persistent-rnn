@@ -7,6 +7,7 @@
 #include <prnn/detail/parallel/cuda.h>
 
 #include <prnn/detail/util/casts.h>
+#include <prnn/detail/util/logger.h>
 #include <prnn/detail/util/knobs.h>
 
 // Standard Library Includes

@@ -6,7 +6,8 @@
 #pragma once
 
 // Forward Declarations
-namespace prnn { class Matrix;             }
+namespace prnn { namespace matrix { class Matrix; } }
+
 namespace prnn { class RecurrentOpsHandle; }
 
 namespace prnn {
@@ -16,28 +17,28 @@ namespace prnn {
  *  \param activations The input/output activations from the previous layer
            (stored as [previous-layer-outputs, mini-batch, timesteps]).
  */
-void forwardPropRecurrent(const RecurrentOpsHandle& handle,
-    const Matrix& weights, Matrix& activations);
+void forwardPropRecurrent(matrix::Matrix& activations,
+    const matrix::Matrix& weights, const RecurrentOpsHandle& handle);
 
 /** \brief Back propagate through a recurrent weight matrix, generating deltas.
  *  \param weights The recurrent weight matrix.
  *  \param activations The input/output activations from the previous layer
            (stored as [previous-layer-outputs, mini-batch, timesteps]).
  */
-void backPropDeltasRecurrent(const RecurrentOpsHandle& handle,
-    const Matrix& weights,
-    const Matrix& activations,
-    Matrix& deltas);
+void backPropDeltasRecurrent(matrix::Matrix& deltas,
+    const matrix::Matrix& weights,
+    const matrix::Matrix& activations,
+    const RecurrentOpsHandle& handle);
 
 /** \brief Compute gradient for the recurrent weight matrix.
  *  \param activations Activations for the layer.
  *  \param deltas Deltas for the layer.
  *  \param dWeights The output gradients.
  */
-void backPropGradientsRecurrent(const RecurrentOpsHandle& handle,
-    const Matrix& activations,
-    const Matrix& deltas,
-    Matrix& dWeights);
+void backPropGradientsRecurrent(matrix::Matrix& dWeights,
+    const matrix::Matrix& activations,
+    const matrix::Matrix& deltas,
+    const RecurrentOpsHandle& handle);
 
 }
 

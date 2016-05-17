@@ -3,8 +3,6 @@
 // Persistent RNN Includes
 #include <prnn/detail/matrix/precision.h>
 
-#include <prnn/detail/util/debug.h>
-#include <prnn/detail/util/memory.h>
 #include <prnn/detail/util/knobs.h>
 
 namespace prnn
@@ -37,7 +35,6 @@ size_t Precision::size() const
     case Single: return sizeof(float);
     case Double: return sizeof(double);
     default:
-        assertM(false, "Invalid type.");
         return 0;
     }
 }

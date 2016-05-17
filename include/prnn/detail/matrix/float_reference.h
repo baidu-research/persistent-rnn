@@ -1,7 +1,7 @@
 #pragma once
 
 // Persistent RNN Includes
-#include <prnn/matrix/interface/Precision.h>
+#include <prnn/detail/matrix/precision.h>
 
 namespace prnn
 {

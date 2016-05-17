@@ -1,13 +1,12 @@
 
+// Persistent RNN Includes
+#include <prnn/detail/rnn/recurrent_ops.h>
 
-#pragma once
+#include <prnn/detail/matrix/matrix_view.h>
 
-
-// Forward Declarations
-namespace prnn { class RecurrentOpsHandle; }
-
-namespace prnn { namespace matrix { class DynamicView;      } }
-namespace prnn { namespace matrix { class ConstDynamicView; } }
+#include <prnn/detail/rnn/recurrent_ops_config.h>
+#include <prnn/detail/rnn/recurrent_ops_handle.h>
+#include <prnn/detail/rnn/recurrent_ops_kernels.h>
 
 
 namespace prnn
@@ -16,7 +15,10 @@ namespace prnn
 namespace rnn
 {
 
-size_t getMaximumSizeRNNForThisGPU();
+size_t getMaximumSizeRNNForThisGPU()
+{
+
+}
 
 void forwardPropRecurrent(
     const matrix::DynamicView& activations,
@@ -35,6 +37,7 @@ void backPropGradientsRecurrent(const matrix::DynamicView& dWeights,
 }
 
 }
+
 
 
 
