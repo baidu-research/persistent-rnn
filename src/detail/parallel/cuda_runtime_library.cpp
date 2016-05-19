@@ -1,4 +1,4 @@
-/*    \file   CudaRuntimeLibrary.cpp
+/*  \file   CudaRuntimeLibrary.cpp
     \brief  The source file for the CudaRuntimeLibrary class.
 */
 
@@ -107,7 +107,7 @@ void* CudaRuntimeLibrary::cudaHostAlloc(size_t bytes)
 
     void* address = nullptr;
 
-    int status = (*_interface.cudaHostAlloc)(&address, bytes, cudaHostAllocMapped);
+    int status = (*_interface.cudaHostAlloc)(&address, bytes, cudaHostAllocMappedFlag);
 
     if(status != cudaSuccess)
     {
@@ -167,6 +167,37 @@ void CudaRuntimeLibrary::cudaMemcpy(void* dest, const void* src, size_t bytes,
     if(status != cudaSuccess)
     {
         throw std::runtime_error("Cuda memcpy failed: " +
+            cudaGetErrorString(status));
+    }
+}
+
+void CudaRuntimeLibrary::cudaMemcpyAsync(void* dest, const void* src, size_t bytes,
+    cudaMemcpyKind kind, void* stream)
+{
+    _check();
+
+    //util::log("CudaRuntimeLibrary") << " CUDA memcpy (destination address: "
+    //    << dest << ", source address: " << src << ", " << bytes
+    //    << " bytes)\n";
+
+    int status = (*_interface.cudaMemcpyAsync)(dest, src, bytes, kind, stream);
+
+    if(status != cudaSuccess)
+    {
+        throw std::runtime_error("Cuda memcpy failed: " +
+            cudaGetErrorString(status));
+    }
+}
+
+void CudaRuntimeLibrary::cudaDeviceGetAttribute(int* value, cudaDeviceAttr attr, int device)
+{
+    _check();
+
+    int status = (*_interface.cudaDeviceGetAttribute)(value, attr, device);
+
+    if(status != cudaSuccess)
+    {
+        throw std::runtime_error("Cuda device get attribute failed: " +
             cudaGetErrorString(status));
     }
 }
@@ -253,7 +284,9 @@ void CudaRuntimeLibrary::Interface::load()
         DynLink(cudaFree);
         DynLink(cudaFreeHost);
         DynLink(cudaMemcpy);
+        DynLink(cudaMemcpyAsync);
         DynLink(cudaGetErrorString);
+        DynLink(cudaDeviceGetAttribute);
 
         #undef DynLink
 

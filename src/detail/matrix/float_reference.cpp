@@ -25,7 +25,8 @@ void set(void* data, double value)
 }
 
 template<typename PossiblePrecisionType>
-void setOverPrecisions(const Precision& precision, const std::tuple<PossiblePrecisionType>& precisions, void* data, double value)
+void setOverPrecisions(const Precision& precision,
+    const std::tuple<PossiblePrecisionType>& precisions, void* data, double value)
 {
     assert(precision == PossiblePrecisionType());
 
@@ -33,7 +34,8 @@ void setOverPrecisions(const Precision& precision, const std::tuple<PossiblePrec
 }
 
 template<typename PossiblePrecisions>
-void setOverPrecisions(const Precision& precision, const PossiblePrecisions& precisions, void* data, double value)
+void setOverPrecisions(const Precision& precision,
+    const PossiblePrecisions& precisions, void* data, double value)
 {
     typedef typename std::tuple_element<0, PossiblePrecisions>::type PossiblePrecisionType;
 
@@ -62,7 +64,8 @@ double get(const void* data)
 }
 
 template<typename PossiblePrecisionType>
-double getOverPrecisions(const Precision& precision, const std::tuple<PossiblePrecisionType>& precisions, const void* data)
+double getOverPrecisions(const Precision& precision,
+    const std::tuple<PossiblePrecisionType>& precisions, const void* data)
 {
     assert(precision == PossiblePrecisionType());
 
@@ -70,7 +73,8 @@ double getOverPrecisions(const Precision& precision, const std::tuple<PossiblePr
 }
 
 template<typename PossiblePrecisions>
-double getOverPrecisions(const Precision& precision, const PossiblePrecisions& precisions, const void* data)
+double getOverPrecisions(const Precision& precision,
+    const PossiblePrecisions& precisions, const void* data)
 {
     typedef typename std::tuple_element<0, PossiblePrecisions>::type PossiblePrecisionType;
 

@@ -120,11 +120,11 @@ struct prnnTensorStruct
 {
 public:
     prnnTensorFormat_t format;
-    prnnDataType_t     dataType;
 
 public:
     prnn::matrix::Dimension size;
     prnn::matrix::Dimension stride;
+    prnn::matrix::Precision precision;
 };
 
 prnnStatus_t prnnCreateTensorDescriptor(prnnTensorDescriptor_t* handle)
@@ -141,6 +141,22 @@ prnnStatus_t prnnCreateTensorDescriptor(prnnTensorDescriptor_t* handle)
     return PRNN_STATUS_SUCCESS;
 }
 
+static prnn::matrix::Precision getPrecision(prnnDataType_t dataType)
+{
+    if(dataType == PRNN_DATA_HALF)
+    {
+        return prnn::matrix::HalfPrecision();
+    }
+    else if(dataType == PRNN_DATA_FLOAT)
+    {
+        return prnn::matrix::SinglePrecision();
+    }
+    else
+    {
+        return prnn::matrix::DoublePrecision();
+    }
+}
+
 prnnStatus_t prnnSetTensor4dDescriptor(prnnTensorDescriptor_t descriptor,
                                        prnnTensorFormat_t     format,
                                        prnnDataType_t         dataType,
@@ -149,10 +165,10 @@ prnnStatus_t prnnSetTensor4dDescriptor(prnnTensorDescriptor_t descriptor,
                                        int                    h,
                                        int                    w)
 {
-    descriptor->format   = format;
-    descriptor->dataType = dataType;
-    descriptor->size     = prnn::matrix::Dimension(w, h, c, n);
-    descriptor->stride   = prnn::matrix::linearStride(descriptor->size);
+    descriptor->format    = format;
+    descriptor->precision = getPrecision(dataType);
+    descriptor->size      = prnn::matrix::Dimension(w, h, c, n);
+    descriptor->stride    = prnn::matrix::linearStride(descriptor->size);
 
     return PRNN_STATUS_SUCCESS;
 }
@@ -169,12 +185,28 @@ prnnStatus_t prnnSetTensor4dDescriptorEx(prnnTensorDescriptor_t descriptor,
                                          int                    hStride,
                                          int                    wStride)
 {
-    descriptor->format   = PRNN_TENSOR_NCHW;
-    descriptor->dataType = dataType;
-    descriptor->size     = prnn::matrix::Dimension(w, h, c, n);
-    descriptor->stride   = prnn::matrix::Dimension(wStride, hStride, cStride, nStride);
+    descriptor->format    = PRNN_TENSOR_NCHW;
+    descriptor->precision = getPrecision(dataType);
+    descriptor->size      = prnn::matrix::Dimension(w, h, c, n);
+    descriptor->stride    = prnn::matrix::Dimension(wStride, hStride, cStride, nStride);
 
     return PRNN_STATUS_SUCCESS;
+}
+
+static prnnDataType_t getDataType(const prnn::matrix::Precision& precision)
+{
+    if(precision == prnn::matrix::HalfPrecision())
+    {
+        return PRNN_DATA_HALF;
+    }
+    else if(precision == prnn::matrix::SinglePrecision())
+    {
+        return PRNN_DATA_FLOAT;
+    }
+    else
+    {
+        return PRNN_DATA_DOUBLE;
+    }
 }
 
 prnnStatus_t prnnGetTensor4dDescriptor(const prnnTensorDescriptor_t descriptor,
@@ -188,7 +220,7 @@ prnnStatus_t prnnGetTensor4dDescriptor(const prnnTensorDescriptor_t descriptor,
                                        int*                         hStride,
                                        int*                         wStride)
 {
-    *dataType = descriptor->dataType;
+    *dataType = getDataType(descriptor->precision);
 
     *w = descriptor->size[0];
     *h = descriptor->size[1];
@@ -209,7 +241,7 @@ prnnStatus_t prnnSetTensorNdDescriptor(prnnTensorDescriptor_t descriptor,
                                        const int*             dimA,
                                        const int*             strideA)
 {
-    descriptor->dataType = dataType;
+    descriptor->precision = getPrecision(dataType);
 
     if (nbDims < 0 || nbDims > PRNN_DIM_MAX)
     {
@@ -236,7 +268,7 @@ prnnStatus_t prnnGetTensorNdDescriptor(const prnnTensorDescriptor_t descriptor,
                                        int*                         strideA)
 {
 
-    *dataType = descriptor->dataType;
+    *dataType = getDataType(descriptor->precision);
 
     if (nbDimsRequested < 0 || nbDimsRequested > PRNN_DIM_MAX)
     {
@@ -397,13 +429,15 @@ static bool isForwardPropSupported(const void* x, const void* hx,
 static prnn::matrix::DynamicView constructView(const prnnTensorDescriptor_t descriptor,
     void* data)
 {
-    return prnn::matrix::DynamicView(data, descriptor->size, descriptor->stride);
+    return prnn::matrix::DynamicView(data, descriptor->size, descriptor->stride,
+        descriptor->precision);
 }
 
 static prnn::matrix::ConstDynamicView constructView(const prnnTensorDescriptor_t descriptor,
     const void* data)
 {
-    return prnn::matrix::ConstDynamicView(data, descriptor->size, descriptor->stride);
+    return prnn::matrix::ConstDynamicView(data, descriptor->size, descriptor->stride,
+        descriptor->precision);
 }
 
 static prnn::RecurrentActivationFunction getActivationFunction(prnnRNNMode_t mode)
@@ -428,16 +462,17 @@ static prnn::RecurrentLayerDirection getDirection(prnnDirectionMode_t mode)
 }
 
 static prnn::RecurrentOpsHandle constructHandle(prnnHandle_t handle,
-    const prnnRNNDescriptor_t rnnDesc, size_t miniBatchSize)
+    const prnnRNNDescriptor_t rnnDesc, size_t miniBatchSize, size_t timesteps)
 {
-    return prnn::RecurrentOpsHandle(rnnDesc->hiddenSize, miniBatchSize,
+    return prnn::RecurrentOpsHandle(rnnDesc->hiddenSize, miniBatchSize, timesteps,
         getActivationFunction(rnnDesc->mode),
         getDirection(rnnDesc->direction));
 }
 
-static prnn::matrix::DynamicView getScratchView(void* workspace, size_t size)
+static prnn::matrix::DynamicView getScratchView(void* workspace, size_t size,
+    const prnn::matrix::Precision& precision)
 {
-    return prnn::matrix::DynamicView(workspace, {size}, {1});
+    return prnn::matrix::DynamicView(workspace, {size}, {1}, precision);
 }
 
 prnnStatus_t prnnRNNForward(prnnHandle_t handle,
@@ -475,11 +510,13 @@ prnnStatus_t prnnRNNForward(prnnHandle_t handle,
     auto activationsView = constructView(*yDesc, y);
     auto weightsView     = constructView( wDesc, w);
 
-    size_t miniBatchSize = activationsView.size()[3];
+    size_t miniBatchSize = activationsView.size()[1];
+    size_t timesteps     = activationsView.size()[2];
 
-    auto opsHandle = constructHandle(handle, rnnDesc, miniBatchSize);
+    auto opsHandle = constructHandle(handle, rnnDesc, miniBatchSize, timesteps);
 
-    auto scratchView = getScratchView(workspace, workSpaceSizeInBytes);
+    auto scratchView = getScratchView(workspace, workSpaceSizeInBytes,
+        activationsView.precision());
 
     prnn::rnn::forwardPropRecurrent(activationsView, weightsView, scratchView, opsHandle);
 

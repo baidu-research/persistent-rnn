@@ -18,7 +18,6 @@
 //http://stackoverflow.com/questions/1659440/32-bit-to-16-bit-floating-point-conversion
 
 namespace prnn {
-namespace detail {
 namespace types {
 
 /** 16-bit floating point class.  Conversions are done with intrinsics on GPU and
@@ -34,8 +33,7 @@ public:
     float16() {};
 
     CUDA_DECORATOR
-    inline explicit
-    float16(float value) {
+    inline float16(float value) {
         #ifdef __CUDA_ARCH__
             val_ = __float2half_rn(value);
         #elif defined(__F16C__)
@@ -289,6 +287,33 @@ public:
         return this->to_float() / rhs;
     }
 
+    CUDA_DECORATOR
+    inline
+    float16& operator=(const float16& rhs) {
+        this->val_ = rhs.val_;
+        return *this;
+    }
+
+    CUDA_DECORATOR
+    inline
+    float16& operator=(const float& rhs) {
+        this->val_ = float16(rhs).val_;
+        return *this;
+    }
+
+    CUDA_DECORATOR
+    inline
+    float16& operator=(const double& rhs) {
+        this->val_ = float16(rhs).val_;
+        return *this;
+    }
+
+    CUDA_DECORATOR
+    inline
+    operator float() const {
+        return to_float();
+    }
+
     inline
     friend std::ostream& operator<<(std::ostream& os, const float16& val) {
         os << val.to_float();
@@ -347,6 +372,11 @@ bool operator==(const float& lhs, const float16& rhs) {
     return rhs.to_float() == lhs;
 }
 
+CUDA_DECORATOR
+inline
+bool operator!=(const float& lhs, const float16& rhs) {
+    return rhs.to_float() != lhs;
+}
 
 CUDA_DECORATOR
 inline
@@ -472,7 +502,6 @@ float operator*(const bool& lhs, const float16& rhs) {
     return lhs * rhs.to_float();
 }
 
-}
 }
 }
 

@@ -1,6 +1,9 @@
 
 #pragma once
 
+// Persistent RNN Includes
+#include <prnn/detail/types/float16.h>
+
 // Standard Library Includes
 #include <tuple>
 #include <memory>
@@ -53,7 +56,7 @@ private:
 class HalfPrecision : public Precision
 {
 public:
-    typedef float type;
+    typedef types::float16 type;
 
 public:
     HalfPrecision();
@@ -80,7 +83,7 @@ public:
 
 };
 
-typedef std::tuple<HalfPrecision, SinglePrecision, DoublePrecision> AllPrecisions;
+typedef std::tuple<SinglePrecision, DoublePrecision> AllPrecisions;
 
 }
 }

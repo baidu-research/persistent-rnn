@@ -3,10 +3,10 @@
 // Persistent RNN Includes
 #include <prnn/detail/util/abort.h>
 #include <prnn/detail/util/atomics.h>
-#include <prnn/detail/util/collectives.h>
+
+#include <prnn/detail/parallel/cuda_runtime_library.h>
 
 namespace prnn {
-namespace detail {
 namespace rnn {
 
 class GpuTimer {
@@ -25,32 +25,19 @@ private:
 
 };
 
-template<typename T>
-__global__ void zero_counters(T* counter, index_t size) {
-    for (index_t i = threadIdx.x; i < size; i += blockDim.x) {
-        counter[i] = 0;
-    }
-}
-
-inline void zero_counters(index_t* counters, index_t size, cudaStream_t stream) {
-    zero_counters<index_t><<<1, 128, 0, stream>>>(counters, size);
-}
-
 class Synchronizer {
 public:
-    Synchronizer(index_t blocks, cudaStream_t stream, Place place)
-    : counters_(make_dim(3), place),
-      blocks_(blocks), stream_(stream), current_phase_(0), not_finished_(true) {
+    Synchronizer(index_t blocks, cudaStream_t stream, index_t* counters)
+    : counters_(counters), blocks_(blocks), stream_(stream),
+      current_phase_(0), not_finished_(true) {
 
-        zero_counters(counters_.raw_ptr(), 3, stream);
-
-        participating_count_   = counters_.raw_ptr() + 0;
-        barrier_failed_flag_   = counters_.raw_ptr() + 1;
-        current_phase_counter_ = counters_.raw_ptr() + 2;
+        participating_count_   = counters + 0;
+        barrier_failed_flag_   = counters + 1;
+        current_phase_counter_ = counters + 2;
     }
 
 public:
-    ArrayView<index_t, 1> get_counters() const { return counters_; }
+    index_t* get_counters() const { return counters_; }
 
 public:
     index_t get_blocks() const {
@@ -70,8 +57,8 @@ public:
     void reset_failed_flag() {
         index_t failed = 0;
 
-        majel::gpu::detail::memcpy(get_barrier_failed_flag(), &failed,
-            sizeof(index_t), cudaMemcpyHostToDevice, stream_);
+        prnn::parallel::CudaRuntimeLibrary::cudaMemcpyAsync(get_barrier_failed_flag(), &failed,
+            sizeof(index_t), prnn::parallel::CudaRuntimeLibrary::cudaMemcpyHostToDevice, stream_);
     }
 
     bool not_finished() const {
@@ -99,8 +86,9 @@ private:
     bool get_failed_() const {
         index_t failed = 0;
 
-        majel::gpu::detail::memcpy(&failed, get_barrier_failed_flag(),
-            sizeof(index_t), cudaMemcpyDeviceToHost, stream_);
+        prnn::parallel::CudaRuntimeLibrary::cudaMemcpyAsync(&failed,
+            get_barrier_failed_flag(), sizeof(index_t),
+            prnn::parallel::CudaRuntimeLibrary::cudaMemcpyDeviceToHost, stream_);
 
         return failed != 0;
     }
@@ -108,14 +96,15 @@ private:
     index_t get_current_phase_() const {
         index_t current_phase = 0;
 
-        majel::gpu::detail::memcpy(&current_phase, get_current_phase_counter(),
-            sizeof(index_t), cudaMemcpyDeviceToHost, stream_);
+        prnn::parallel::CudaRuntimeLibrary::cudaMemcpyAsync(&current_phase,
+            get_current_phase_counter(), sizeof(index_t),
+            prnn::parallel::CudaRuntimeLibrary::cudaMemcpyDeviceToHost, stream_);
 
         return current_phase;
     }
 
 private:
-    Array<index_t, 1> counters_;
+    index_t* counters_;
 
 private:
     index_t* participating_count_;
@@ -164,7 +153,7 @@ private:
     }
 
 private:
-    ArrayView<index_t, 1> counters_;
+    index_t* counters_;
 
 private:
     index_t* participating_count_;
@@ -176,7 +165,6 @@ private:
 
 };
 
-}
 }
 }
 

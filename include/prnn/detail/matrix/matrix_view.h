@@ -16,13 +16,15 @@ class DynamicView
 {
 public:
     DynamicView(Matrix& matrix)
-    : _data(matrix.data()), _size(matrix.size()), _stride(matrix.stride())
+    : _data(matrix.data()), _size(matrix.size()), _stride(matrix.stride()),
+      _precision(matrix.precision())
     {
 
     }
 
-    CUDA_DECORATOR DynamicView(void* data, const Dimension& size, const Dimension& stride)
-    : _data(data), _size(size), _stride(stride)
+    CUDA_DECORATOR DynamicView(void* data, const Dimension& size, const Dimension& stride,
+        const Precision& precision)
+    : _data(data), _size(size), _stride(stride), _precision(precision)
     {
 
     }
@@ -38,10 +40,22 @@ public:
         return _stride;
     }
 
+    CUDA_DECORATOR const Precision& precision() const
+    {
+        return _precision;
+    }
+
 public:
     CUDA_DECORATOR size_t linearAddress(const Dimension& d) const
     {
         return dotProduct(d, _stride);
+    }
+
+public:
+    template <typename T>
+    CUDA_DECORATOR T* data() const
+    {
+        return reinterpret_cast<T*>(_data);
     }
 
 public:
@@ -61,6 +75,7 @@ private:
     void*     _data;
     Dimension _size;
     Dimension _stride;
+    Precision _precision;
 
 };
 
@@ -68,14 +83,15 @@ class ConstDynamicView
 {
 public:
     ConstDynamicView(const Matrix& matrix)
-    : _data(matrix.data()), _size(matrix.size()), _stride(matrix.stride())
+    : _data(matrix.data()), _size(matrix.size()), _stride(matrix.stride()),
+      _precision(matrix.precision())
     {
 
     }
 
     CUDA_DECORATOR ConstDynamicView(const void* data,
-        const Dimension& size, const Dimension& stride)
-    : _data(data), _size(size), _stride(stride)
+        const Dimension& size, const Dimension& stride, const Precision& precision)
+    : _data(data), _size(size), _stride(stride), _precision(precision)
     {
 
     }
@@ -91,10 +107,22 @@ public:
         return _stride;
     }
 
+    CUDA_DECORATOR const Precision& precision() const
+    {
+        return _precision;
+    }
+
 public:
     CUDA_DECORATOR size_t linearAddress(const Dimension& d) const
     {
         return dotProduct(d, _stride);
+    }
+
+public:
+    template <typename T>
+    CUDA_DECORATOR const T* data() const
+    {
+        return reinterpret_cast<const T*>(_data);
     }
 
 public:
@@ -108,6 +136,7 @@ private:
     const void* _data;
     Dimension   _size;
     Dimension   _stride;
+    Precision   _precision;
 
 };
 

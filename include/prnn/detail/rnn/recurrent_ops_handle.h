@@ -27,6 +27,9 @@ public:
     RecurrentActivationFunction(const RecurrentActivationFunction&);
     RecurrentActivationFunction& operator=(const RecurrentActivationFunction&);
 
+public:
+    const matrix::Operation& getForwardOperation() const;
+    const matrix::Operation& getReverseOperation() const;
 
 public:
     std::unique_ptr<matrix::Operation> forwardOperation;
@@ -51,7 +54,7 @@ public:
 class RecurrentOpsHandle
 {
 public:
-    RecurrentOpsHandle(size_t layerSize, size_t miniBatchSize,
+    RecurrentOpsHandle(size_t layerSize, size_t miniBatchSize, size_t timesteps,
         const RecurrentActivationFunction& activationFunction,
         RecurrentLayerDirection direction,
         bool allowPersistentKernels = true,
@@ -59,21 +62,27 @@ public:
 
         layerSize(layerSize),
         miniBatchSize(miniBatchSize),
+        timesteps(timesteps),
         allowPersistentKernels(allowPersistentKernels),
         skipConnectionScale(skipConnectionScale),
         activationFunction(activationFunction),
-        direction(direction)
+        direction(direction),
+        stream(0)
     {}
 
 public:
     size_t layerSize;
     size_t miniBatchSize;
+    size_t timesteps;
     bool   allowPersistentKernels;
     double skipConnectionScale;
 
 public:
     RecurrentActivationFunction activationFunction;
     RecurrentLayerDirection     direction;
+
+public:
+    cudaStream_t stream;
 };
 
 }

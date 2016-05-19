@@ -1,19 +1,20 @@
 #pragma once
 
 // Persistent RNN Includes
-#include <prnn/detail/array.h>
-#include <prnn/detail/fixed_point.h>
+#include <prnn/detail/types/fixed_point.h>
+#include <prnn/detail/types/float16.h>
 
-#include <prnn/detail/cuda.h>
+#include <prnn/detail/rnn/recurrent_ops_handle.h>
 
 // Standard Library Includes
 #include <cstdint>
 
-namespace recurrent {
-namespace gpu {
-namespace persistent {
+namespace prnn {
+namespace rnn {
 
 typedef int32_t index_t;
+typedef prnn::types::float16 float16;
+typedef prnn::RecurrentLayerDirection RecurrentLayerDirection;
 
 template<
     index_t StreamingMultiprocessors = 24,
@@ -23,7 +24,7 @@ template<
     index_t BlockTileColumns = 224,
     index_t ThreadTileRows = 14,
     index_t ThreadTileColumns = 14,
-    bool    Reverse = false>
+    int Direction = prnn::RECURRENT_FORWARD>
 class TileConfig {
 public:
     enum {
@@ -73,7 +74,7 @@ public:
     };
 
     enum {
-        REVERSE = Reverse
+        DIRECTION = Direction
     };
 
 };
@@ -163,18 +164,37 @@ public:
     };
 };
 
+class RecurrentOpsDeviceHandle
+{
+public:
+    RecurrentOpsDeviceHandle(const RecurrentOpsHandle& handle) :
+
+        layerSize(handle.layerSize),
+        miniBatchSize(handle.miniBatchSize),
+        timesteps(handle.timesteps),
+        allowPersistentKernels(handle.allowPersistentKernels),
+        skipConnectionScale(handle.skipConnectionScale),
+        direction(handle.direction)
+    {}
+
+public:
+    size_t layerSize;
+    size_t miniBatchSize;
+    size_t timesteps;
+    bool   allowPersistentKernels;
+    double skipConnectionScale;
+
+public:
+    RecurrentLayerDirection direction;
+};
+
 template<
     typename RealType_,
-    RecurrentLayerDirection Direction,
     typename ActivationFunction = None,
     typename Config = TileConfig<> >
-class MBSPRecurrentConfig {
+class RecurrentConfig {
 public:
     typedef RealType_ RealType;
-
-    typedef ArrayView<RealType, 2> WeightType;
-    typedef ArrayView<RealType, 3> ActivationType;
-    typedef ActivationType         DeltaType;
 
 public:
     enum {
@@ -286,12 +306,12 @@ public:
     };
 
     enum {
-        REVERSE = Config::REVERSE
+        DIRECTION = Config::DIRECTION
     };
 
 public:
     typedef typename GetIntType<sizeof(RealType)>::type IntType;
-    typedef fixed_point<IntType, FIXED_POINT_FRACTIONAL_BITS> FixedPointType;
+    typedef prnn::types::fixed_point<IntType, FIXED_POINT_FRACTIONAL_BITS> FixedPointType;
 
 public:
     class
@@ -361,10 +381,10 @@ public:
     };
 
 public:
-    MBSPRecurrentConfig(ActivationFunction f, RecurrentOpsConfig c)
-        : activationFunction(f), config(c) {}
+    RecurrentConfig(ActivationFunction f, RecurrentOpsDeviceHandle handle)
+        : activationFunction(f), handle(handle) {}
 
-    MBSPRecurrentConfig(RecurrentOpsConfig c) : config(c) {}
+    RecurrentConfig(RecurrentOpsDeviceHandle handle) : handle(handle) {}
 
 public:
     __device__ RealType apply_activation_function(RealType v) const {
@@ -376,7 +396,7 @@ public:
     }
 
     __device__ index_t get_timestep(index_t logical_timestep, index_t timesteps) const {
-        if (Direction == RECURRENT_FORWARD) {
+        if (DIRECTION == RECURRENT_FORWARD) {
             return logical_timestep;
         }
         else {
@@ -385,7 +405,7 @@ public:
     }
 
     __device__ bool is_last_timestep(index_t timestep, index_t timesteps) const {
-        if (Direction == RECURRENT_FORWARD) {
+        if (DIRECTION == RECURRENT_FORWARD) {
             return timestep == (timesteps - 1);
         }
         else {
@@ -394,7 +414,7 @@ public:
     }
 
     __device__ constexpr bool is_reversed() const {
-        return Direction == RECURRENT_REVERSE;
+        return DIRECTION == RECURRENT_REVERSE;
     }
 
 public:
@@ -404,25 +424,26 @@ public:
 
 public:
     ActivationFunction activationFunction;
-    RecurrentOpsConfig config;
+    RecurrentOpsDeviceHandle handle;
 
 };
 
 
-template <typename RealType, typename TileConfiguration = TileConfig<>>
-class MBSPRecurrentArchitectureParameters {
+template <typename T, typename TileConfiguration = TileConfig<>>
+class RecurrentArchitectureParameters {
 public:
     typedef TileConfiguration TileParameters;
+    typedef T RealType;
 
 public:
-    MBSPRecurrentArchitectureParameters(RecurrentOpsConfig config)
-        : config_(config) {}
+    RecurrentArchitectureParameters(RecurrentOpsHandle handle)
+        : handle(handle) {}
 
 public:
     dim3 blocks() const {
-        int block_rows    = (config_.layer_size + TileParameters::BLOCK_TILE_ROWS    - 1) /
+        int block_rows    = (handle.layerSize + TileParameters::BLOCK_TILE_ROWS    - 1) /
             TileParameters::BLOCK_TILE_ROWS;
-        int block_columns = (config_.layer_size + TileParameters::BLOCK_TILE_COLUMNS - 1) /
+        int block_columns = (handle.layerSize + TileParameters::BLOCK_TILE_COLUMNS - 1) /
             TileParameters::BLOCK_TILE_COLUMNS;
 
         return dim3(block_rows, block_columns, 1);
@@ -450,15 +471,14 @@ public:
 
 public:
     bool is_supported() const {
-        return config_.layer_size <= TileParameters::GRID_TILE_COLUMNS;
+        return handle.layerSize <= TileParameters::GRID_TILE_COLUMNS;
     }
 
-private:
-    RecurrentOpsConfig config_;
+public:
+    RecurrentOpsHandle handle;
 
 };
 
-}
 }
 }
 

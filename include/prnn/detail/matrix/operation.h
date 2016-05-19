@@ -88,7 +88,12 @@ public:
     template<typename T>
     CUDA_DECORATOR T operator()(const T& r) const
     {
-        return _value + r;
+        return T(_value) + r;
+    }
+
+    CUDA_DECORATOR types::float16 operator()(const types::float16& r) const
+    {
+        return types::float16(_value + r.to_float());
     }
 
 private:
@@ -119,7 +124,7 @@ public:
     template<typename T>
     CUDA_DECORATOR T operator()(const T& r) const
     {
-        return r - _value;
+        return r - T(_value);
     }
 
 private:
@@ -186,7 +191,7 @@ public:
     template<typename T>
     CUDA_DECORATOR T operator()(const T& l) const
     {
-        return pow(l, _value);
+        return pow(l, T(_value));
     }
 
     CUDA_DECORATOR float operator()(const float& l) const
@@ -263,7 +268,7 @@ public:
     template<typename T>
     CUDA_DECORATOR T operator()(const T& r) const
     {
-        return _value * r;
+        return T(_value) * r;
     }
 
 private:
@@ -294,7 +299,7 @@ public:
     template<typename T>
     CUDA_DECORATOR T operator()(const T& r) const
     {
-        return r / _value;
+        return r / T(_value);
     }
 
 private:
@@ -317,7 +322,15 @@ public:
         if(l < -50.0) return -50.0;
         if(l >  50.0) return  50.0;
 
-        return T(1.0) / (T(1.0) + T(exp(-l)));
+        return 1.0 / (1.0 + exp(-l));
+    }
+
+    CUDA_DECORATOR types::float16 operator()(const types::float16& l) const
+    {
+        if(l < -50.0) return -50.0;
+        if(l >  50.0) return  50.0;
+
+        return types::float16(1.0 / (1.0 + exp(-l.to_float())));
     }
 
 };
@@ -334,7 +347,7 @@ public:
     template<typename T>
     CUDA_DECORATOR T operator()(const T& l) const
     {
-        return l * (1.0 - l);
+        return l * (T(1.0) - l);
     }
 
 };
@@ -351,7 +364,7 @@ public:
     template<typename T>
     CUDA_DECORATOR T operator()(const T& l) const
     {
-        return (l > 20.0) ? 20.0 : ((l < 0.0) ? 0.0 : l);
+        return (l > T(20.0)) ? T(20.0) : ((l < T(0.0)) ? T(0.0) : l);
     }
 
 };
@@ -368,7 +381,7 @@ public:
     template<typename T>
     CUDA_DECORATOR T operator()(const T& l) const
     {
-        return (l >= 20.0) ? 0.0 : ((l <= 0.0) ? 0.0 : 1.0);
+        return (l >= T(20.0)) ? T(0.0) : ((l <= T(0.0)) ? T(0.0) : T(1.0));
     }
 
 };
@@ -475,7 +488,7 @@ public:
     template<typename T>
     CUDA_DECORATOR T operator()(const T& r) const
     {
-        return T(_value == r);
+        return T(_value) == r;
     }
 
 private:
@@ -506,7 +519,7 @@ public:
     template<typename T>
     CUDA_DECORATOR T operator()(const T& r) const
     {
-        return T(r < _value);
+        return r < T(_value);
     }
 
 private:
@@ -537,7 +550,7 @@ public:
     template<typename T>
     CUDA_DECORATOR T operator()(const T& r) const
     {
-        return T(_value != r);
+        return T(_value) != r;
     }
 
 private:
@@ -568,7 +581,7 @@ public:
     template<typename T>
     CUDA_DECORATOR T operator()(const T& r) const
     {
-        return T(r >= _value);
+        return r >= T(_value);
     }
 
 private:
@@ -599,7 +612,7 @@ public:
     template<typename T>
     CUDA_DECORATOR T operator()(const T& r) const
     {
-        return T(r <= _value);
+        return r <= T(_value);
     }
 
 private:
@@ -656,7 +669,7 @@ public:
     template<typename T>
     CUDA_DECORATOR T operator()(const T& r) const
     {
-        return r * r * _value;
+        return r * r * T(_value);
     }
 
 private:

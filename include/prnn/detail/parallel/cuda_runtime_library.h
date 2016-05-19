@@ -31,9 +31,15 @@ public:
         cudaSuccess = 0
     };
 
+    enum cudaDeviceAttr
+    {
+        cudaDevAttrComputeCapabilityMajor = 75,
+        cudaDevAttrComputeCapabilityMinor = 76
+    };
+
     enum cudaHostAllocFlag
     {
-        cudaHostAllocMapped = 0x2
+        cudaHostAllocMappedFlag = 2
     };
 
 public:
@@ -52,6 +58,10 @@ public:
 
     static void cudaMemcpy(void* dest, const void* src,
         size_t bytes, cudaMemcpyKind kind = cudaMemcpyDefault);
+    static void cudaMemcpyAsync(void* dest, const void* src,
+        size_t bytes, cudaMemcpyKind kind = cudaMemcpyDefault, void* stream = nullptr);
+
+    static void cudaDeviceGetAttribute(int* value, cudaDeviceAttr attr, int device);
 
 public:
     static std::string cudaGetErrorString(int error);
@@ -73,6 +83,10 @@ private:
         int (*cudaFreeHost)  (void*  ptr);
         int (*cudaMemcpy)(void*  dest, const void* src, size_t bytes,
             cudaMemcpyKind kind);
+        int (*cudaMemcpyAsync)(void*  dest, const void* src, size_t bytes,
+            cudaMemcpyKind kind, void* stream);
+
+        int (*cudaDeviceGetAttribute)(int* value, cudaDeviceAttr attr, int device);
 
     public:
         const char* (*cudaGetErrorString)(int error);

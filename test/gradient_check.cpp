@@ -29,8 +29,8 @@ void TestSimpleRecurrentOps()
     size_t timesteps  = 100;
     size_t mini_batch = 2;
 
-    prnn::RecurrentOpsHandle handle(layer_size, mini_batch, prnn::RecurrentRectifiedLinear(),
-        prnn::RECURRENT_FORWARD);
+    prnn::RecurrentOpsHandle handle(layer_size, mini_batch, timesteps,
+        prnn::RecurrentRectifiedLinear(), prnn::RECURRENT_FORWARD);
 
     auto weights     = ones({layer_size, layer_size}, precision);
     auto activations = ones({layer_size, mini_batch, timesteps}, precision);
@@ -156,8 +156,8 @@ void TestSimpleRecurrentOpsGradientCheck(prnn::RecurrentLayerDirection direction
 
     samples = std::min(window_rows * window_columns, samples);
 
-    prnn::RecurrentOpsHandle handle(layer_size, mini_batch, prnn::RecurrentRectifiedLinear(),
-        direction);
+    prnn::RecurrentOpsHandle handle(layer_size, mini_batch, timesteps,
+        prnn::RecurrentRectifiedLinear(), direction);
 
     auto weights = zeros({layer_size, layer_size}, precision);
     auto weights_slice = slice(weights, {0, 0}, {window_rows, window_columns});

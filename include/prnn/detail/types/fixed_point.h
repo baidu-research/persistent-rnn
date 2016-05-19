@@ -1,5 +1,7 @@
 #pragma once
 
+#include <prnn/detail/types/float16.h>
+
 namespace prnn {
 namespace types {
 
@@ -21,6 +23,10 @@ public:
 
     CUDA_DECORATOR fixed_point(float f) {
         *this = f;
+    }
+
+    CUDA_DECORATOR fixed_point(float16 f) {
+        *this = f.to_float();
     }
 
     CUDA_DECORATOR fixed_point& operator=(double d) {

@@ -21,7 +21,8 @@ env['PRNN_PATH'] = Dir('.').abspath
 env['path_to_root_dir'] = os.path.abspath(prnn_path_to_root_dir)
 
 # find all source files in the source tree
-directories = ['src', 'src/detail/matrix', 'src/detail/parallel', 'src/detail/util']
+directories = ['src', 'src/detail/matrix', 'src/detail/parallel', 'src/detail/util',
+    'src/detail/rnn']
 
 source_directories = directories
 cuda_source_directories = directories
@@ -71,7 +72,8 @@ if env['install']:
             os.path.join(env['install_path'], "bin"), program))
 
     # install headers
-    header_directories = [os.path.join(i, 'interface') for i in directories]
+    header_directories = ['include/prnn/detail/matrix', 'include/prnn/detail/util',
+        'include/prnn/detail/parallel', 'include/prnn/detail/rnn', 'include/prnn/detail/util']
     header_extensions = ['*.h']
 
     headers = []

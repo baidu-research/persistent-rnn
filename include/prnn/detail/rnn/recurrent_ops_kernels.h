@@ -1,12 +1,10 @@
 #pragma once
 
 // Persistent RNN Includes
-#include <prnn/detail/rnn/mbsp_recurrent_config.h>
+#include <prnn/detail/rnn/recurrent_ops_config.h>
 #include <prnn/detail/rnn/synchronizer.h>
 
-#include <prnn/detail/types/functors.h>
-
-#include <prnn/detail/rnn/collectives.h>
+#include <prnn/detail/util/atomics.h>
 
 #define DEBUG_RECURRENT_OPS 1
 
@@ -30,10 +28,8 @@
 
 #endif
 
-namespace majel {
-namespace recurrent {
-namespace gpu {
-namespace persistent {
+namespace prnn {
+namespace rnn {
 
 template<typename Config>
 __device__ typename Config::SharedDataStorage& get_shared_storage() {
@@ -50,29 +46,29 @@ public:
 
 public:
     PersistentEngineParameters(const Config& config,
-        Array<RealType, 2> weights, Array<RealType, 3> activations,
-        Array<RealType, 3> activations_scratch,
+        const RealType* weights, RealType* activations,
+        RealType* activations_scratch,
         double skip_connection_scale, const Synchronizer& synchronizer_)
-    : PersistentEngineParameters(config, weights, Array<RealType, 3>(), activations,
+    : PersistentEngineParameters(config, weights, nullptr, activations,
         activations_scratch, skip_connection_scale, synchronizer_)
     {
 
     }
 
     PersistentEngineParameters(const Config& config,
-        Array<RealType, 2> weights, Array<RealType, 3> back_prop_activations,
-        Array<RealType, 3> activations_or_deltas,
-        Array<RealType, 3> activations_scratch,
+        const RealType* weights, RealType* back_prop_activations,
+        RealType* activations_or_deltas,
+        RealType* activations_scratch,
         double skip_connection_scale, const Synchronizer& synchronizer_)
-    : weights(weights.raw_ptr()),
-      back_prop_activations(back_prop_activations.raw_ptr()),
-      activations(activations_or_deltas.raw_ptr()),
-      activation_scratch(activations_scratch.raw_ptr()),
+    : weights(weights),
+      back_prop_activations(back_prop_activations),
+      activations(activations_or_deltas),
+      activation_scratch(activations_scratch),
       skip_connection_scale(skip_connection_scale),
-      layer_size(get<0>(activations_or_deltas.size())),
-      mini_batch_size(get<1>(activations_or_deltas.size())),
-      timesteps(get<2>(activations_or_deltas.size())),
-      is_fully_covered(get<0>(activations_or_deltas.size()) % Config::BLOCK_TILE_COLUMNS == 0),
+      layer_size(config.handle.layerSize),
+      mini_batch_size(config.handle.miniBatchSize),
+      timesteps(config.handle.timesteps),
+      is_fully_covered(config.handle.layerSize % Config::BLOCK_TILE_COLUMNS == 0),
       synchronizer(synchronizer_),
       config(config)
     {
@@ -178,7 +174,7 @@ private:
           reduction_threads_per_value(parameters.reduction_threads_per_value)
         {
 
-            if (Config::REVERSE) {
+            if (Config::DIRECTION == prnn::RECURRENT_FORWARD) {
                 index_t iteration = parameters.timesteps * parameters.mini_batch_size -
                     parameters.first_iteration - 1;
 
@@ -487,12 +483,23 @@ private:
     }
 
 private:
-    __device__ void populate_scratch() {
-        auto group = this_2d_grid();
+    __device__ index_t thread_id_in_grid() const {
+        return threadIdx.x +
+            threadIdx.y * (blockDim.x) +
+            blockIdx.x * (blockDim.x * blockDim.y) +
+            blockIdx.y * (blockDim.x * blockDim.y * gridDim.x);
+    }
 
-        for (index_t offset = id(group);
-            offset < parameters.layer_size * parameters.mini_batch_size;
-            offset += size(group)) {
+    __device__ index_t grid_size() const {
+        return blockDim.x * blockDim.y * gridDim.x * gridDim.y;
+    }
+
+    __device__ void populate_scratch() {
+        index_t id   = thread_id_in_grid();
+        index_t size = grid_size();
+
+        for (index_t offset = id; offset < parameters.layer_size * parameters.mini_batch_size;
+            offset += size) {
 
             auto value = parameters.activations[offset];
 
@@ -501,7 +508,7 @@ private:
                 blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y,
                 get_scratch_offset(offset),
                 parameters.activation_scratch + get_scratch_offset(offset),
-                offset, parameters.activations + offset, value);
+                offset, parameters.activations + offset, (float)value);
 
             reinterpret_cast<IntType&>(
                 parameters.activation_scratch[get_scratch_offset(offset)]) =
@@ -511,16 +518,16 @@ private:
 
 private:
     __device__ void populate_scratch_back_prop() {
-        auto group = this_2d_grid();
+        index_t id   = thread_id_in_grid();
+        index_t size = grid_size();
 
         auto* deltas_base = parameters.get_deltas() +
             (parameters.timesteps - 1) * parameters.mini_batch_size * parameters.layer_size;
         auto* deltas_scratch_base = parameters.get_deltas_scratch() +
             (parameters.timesteps - 1) * parameters.mini_batch_size  * Config::GRID_TILE_ROWS;
 
-        for (index_t offset = id(group);
-            offset < parameters.layer_size * parameters.mini_batch_size;
-            offset += size(group)) {
+        for (index_t offset = id; offset < parameters.layer_size * parameters.mini_batch_size;
+            offset += size) {
 
             auto value = deltas_base[offset];
 
@@ -912,12 +919,12 @@ private:
 
         RealType* load_base = is_input_thread() ?
             register_state.activation_scratch :
-            (Config::REVERSE ?
+            (Config::DIRECTION == prnn::RECURRENT_REVERSE ?
                 register_state.input_base_pointer - register_state.input_to_output_offset :
                 register_state.input_base_pointer + register_state.input_to_output_offset);
 
-        index_t io_offset   = value_offset + thread_offset + block_offset;
-        index_t offset      = io_offset;
+        index_t io_offset = value_offset + thread_offset + block_offset;
+        index_t offset    = io_offset;
 
         GlobalAccessType loaded_data;
 
@@ -1399,7 +1406,7 @@ private:
 
 template<typename Config>
 __launch_bounds__(Config::THREADS_PER_BLOCK, Config::BLOCKS_PER_SM)
-__global__ void mbsp_forward_prop_recurrent(PersistentEngineParameters<Config> parameters) {
+__global__ void forward_prop_recurrent_kernel(PersistentEngineParameters<Config> parameters) {
     PersistentEngine<Config> engine(parameters);
 
     engine.run_forward();
@@ -1407,14 +1414,12 @@ __global__ void mbsp_forward_prop_recurrent(PersistentEngineParameters<Config> p
 
 template<typename Config>
 __launch_bounds__(Config::THREADS_PER_BLOCK, Config::BLOCKS_PER_SM)
-__global__ void mbsp_back_prop_recurrent_deltas(PersistentEngineParameters<Config> parameters) {
+__global__ void back_prop_recurrent_deltas_kernel(PersistentEngineParameters<Config> parameters) {
     PersistentEngine<Config> engine(parameters);
 
     engine.run_back_prop_deltas();
 }
 
-}
-}
 }
 }
 
