@@ -28,10 +28,6 @@ public:
     RecurrentActivationFunction& operator=(const RecurrentActivationFunction&);
 
 public:
-    const matrix::Operation& getForwardOperation() const;
-    const matrix::Operation& getReverseOperation() const;
-
-public:
     std::unique_ptr<matrix::Operation> forwardOperation;
     std::unique_ptr<matrix::Operation> reverseOperation;
 
@@ -82,7 +78,7 @@ public:
     RecurrentLayerDirection     direction;
 
 public:
-    cudaStream_t stream;
+    void* stream;
 };
 
 }

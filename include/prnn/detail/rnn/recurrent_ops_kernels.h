@@ -56,7 +56,8 @@ public:
     }
 
     PersistentEngineParameters(const Config& config,
-        const RealType* weights, RealType* back_prop_activations,
+        const RealType* weights,
+        RealType* back_prop_activations,
         RealType* activations_or_deltas,
         RealType* activations_scratch,
         double skip_connection_scale, const Synchronizer& synchronizer_)
@@ -1422,8 +1423,6 @@ __global__ void back_prop_recurrent_deltas_kernel(PersistentEngineParameters<Con
 
 }
 }
-
-
 
 
 

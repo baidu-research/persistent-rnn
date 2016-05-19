@@ -38,14 +38,16 @@ static matrix::Matrix getBackPropDeltasScratch(const RecurrentOpsHandle& handle,
 
 void backPropDeltasRecurrent(matrix::Matrix& deltas,
     const matrix::Matrix& weights,
-    const matrix::Matrix& activations,
+    const matrix::Matrix& activationsData,
     const RecurrentOpsHandle& handle)
 {
+    auto activations = activationsData;
+
     auto scratch = getBackPropDeltasScratch(handle, deltas.size(), activations.precision());
 
     prnn::rnn::backPropDeltasRecurrent(matrix::DynamicView(deltas),
         matrix::ConstDynamicView(weights),
-        matrix::ConstDynamicView(activations),
+        matrix::DynamicView(activations),
         matrix::DynamicView(scratch),
         handle);
 }

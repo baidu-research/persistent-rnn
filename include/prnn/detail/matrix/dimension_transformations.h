@@ -29,6 +29,12 @@ CUDA_DECORATOR inline void* getAddress(const Dimension& stride, const Dimension&
 CUDA_DECORATOR inline const void* getAddress(const Dimension& stride, const Dimension& position,
     const void* data, size_t elementSize);
 
+CUDA_DECORATOR inline Dimension fillInDimension(const Dimension& newSize,
+    const Dimension& inputSize);
+CUDA_DECORATOR inline Dimension computeSpacing(const Dimension& stride, const Dimension& size);
+CUDA_DECORATOR inline Dimension fillInStride(const Dimension& newSize,
+    const Dimension& inputStride, const Dimension& inputSize);
+
 }
 }
 

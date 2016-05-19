@@ -7,7 +7,7 @@ export PATH=$PRNN_INSTALL_PATH/bin:/usr/local/cuda/bin:/usr/local/bin:/usr/bin:/
 export LD_LIBRARY_PATH=/usr/local/cuda/lib:/opt/local/lib:$PRNN_INSTALL_PATH/lib:/usr/local/lib
 export DYLD_LIBRARY_PATH=$PRNN_INSTALL_PATH/lib:/usr/local/cuda/lib
 
-export PRNN_KNOB_FILE=$SCRIPTPATH/scripts/prnn.config
+export PRNN_KNOB_FILE=$SCRIPTPATH/config/persistent-rnn.config
 
 export CXX=clang++
 export CC=clang

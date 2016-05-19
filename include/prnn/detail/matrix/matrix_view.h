@@ -52,6 +52,12 @@ public:
     }
 
 public:
+    CUDA_DECORATOR void* data(const Dimension& d) const
+    {
+        return reinterpret_cast<uint8_t*>(_data) + linearAddress(d) * precision().size();
+    }
+
+public:
     template <typename T>
     CUDA_DECORATOR T* data() const
     {
@@ -116,6 +122,12 @@ public:
     CUDA_DECORATOR size_t linearAddress(const Dimension& d) const
     {
         return dotProduct(d, _stride);
+    }
+
+public:
+    CUDA_DECORATOR const void* data(const Dimension& d) const
+    {
+        return reinterpret_cast<const uint8_t*>(_data) + linearAddress(d) * precision().size();
     }
 
 public:
@@ -250,6 +262,25 @@ CUDA_DECORATOR MatrixView<T> slice(const MatrixView<T>& input, const Dimension& 
     const Dimension& end)
 {
     return MatrixView<T>(&input(begin), end-begin, input.stride());
+}
+
+CUDA_DECORATOR inline ConstDynamicView slice(const ConstDynamicView& input, const Dimension& begin,
+    const Dimension& end)
+{
+    return ConstDynamicView(input.data(begin), end-begin, input.stride(), input.precision());
+}
+
+CUDA_DECORATOR inline DynamicView slice(const DynamicView& input, const Dimension& begin,
+    const Dimension& end)
+{
+    return DynamicView(input.data(begin), end-begin, input.stride(), input.precision());
+}
+
+CUDA_DECORATOR inline ConstDynamicView reshape(const ConstDynamicView& input,
+    const Dimension& newSize)
+{
+    return ConstDynamicView(input.data<void>(), newSize,
+        fillInStride(newSize, input.stride(), input.size()), input.precision());
 }
 
 }

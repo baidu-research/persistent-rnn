@@ -161,9 +161,11 @@ void copyOverPrecisions(Matrix& result, const Matrix& input)
 
 }
 
-void copy(Matrix& result, const Matrix& input)
+void copy(const Matrix& result, const Matrix& input)
 {
-    detail::copyOverPrecisions(result, input);
+    Matrix temp(result);
+
+    detail::copyOverPrecisions(temp, input);
 }
 
 Matrix copy(const Matrix& input)

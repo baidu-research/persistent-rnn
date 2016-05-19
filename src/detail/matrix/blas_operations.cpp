@@ -2,6 +2,7 @@
 // Persistent RNN Includes
 #include <prnn/detail/matrix/blas_operations.h>
 #include <prnn/detail/matrix/matrix.h>
+#include <prnn/detail/matrix/matrix_view.h>
 #include <prnn/detail/matrix/atlas_library.h>
 #include <prnn/detail/matrix/cublas_library.h>
 
@@ -39,16 +40,24 @@ void gemm(Matrix& result, double beta,
     const Matrix& left,  bool transposeLeft, double alpha,
     const Matrix& right, bool transposeRight)
 {
+    assert(left.isLeadingDimensionContiguous());
+    assert(right.isLeadingDimensionContiguous());
+    assert(result.isLeadingDimensionContiguous());
+
+    gemm(DynamicView(result), beta, ConstDynamicView(left), transposeLeft, alpha,
+        ConstDynamicView(right), transposeRight);
+}
+
+void gemm(const DynamicView& result, double beta,
+    const ConstDynamicView& left,  bool transposeLeft, double alpha,
+    const ConstDynamicView& right, bool transposeRight)
+{
     assert(left.size().size() == right.size().size());
     assert(left.size().size() == result.size().size());
     assert(left.size().size() == 2);
 
     assert(left.precision() == right.precision());
     assert(left.precision() == result.precision());
-
-    assert(left.isLeadingDimensionContiguous());
-    assert(right.isLeadingDimensionContiguous());
-    assert(result.isLeadingDimensionContiguous());
 
     size_t m = transposeLeft  ? left.size()[1]  : left.size()[0];
     size_t n = transposeRight ? right.size()[0] : right.size()[1];
@@ -72,9 +81,9 @@ void gemm(Matrix& result, double beta,
                 CublasLibrary::CUBLAS_OP_T : CublasLibrary::CUBLAS_OP_N,
                 transposeRight ? CublasLibrary::CUBLAS_OP_T : CublasLibrary::CUBLAS_OP_N,
                 m, n, k, &alphaCopy,
-                static_cast<const float*>(left.data()),   lda,
-                static_cast<const float*>(right.data()),  ldb, &betaCopy,
-                static_cast<      float*>(result.data()), ldc);
+                left.data<float>(),   lda,
+                right.data<float>(),  ldb, &betaCopy,
+                result.data<float>(), ldc);
         }
         else if(left.precision() == DoublePrecision())
         {
@@ -82,9 +91,9 @@ void gemm(Matrix& result, double beta,
                 CublasLibrary::CUBLAS_OP_T : CublasLibrary::CUBLAS_OP_N,
                 transposeRight ? CublasLibrary::CUBLAS_OP_T : CublasLibrary::CUBLAS_OP_N,
                 m, n, k, &alpha,
-                static_cast<const double*>(left.data()),   lda,
-                static_cast<const double*>(right.data()),  ldb, &beta,
-                static_cast<      double*>(result.data()), ldc);
+                left.data<double>(),   lda,
+                right.data<double>(),  ldb, &beta,
+                result.data<double>(), ldc);
         }
         else
         {
@@ -99,9 +108,9 @@ void gemm(Matrix& result, double beta,
                 transposeLeft  ? AtlasLibrary::CblasTrans : AtlasLibrary::CblasNoTrans,
                 transposeRight ? AtlasLibrary::CblasTrans : AtlasLibrary::CblasNoTrans,
                 m, n, k, alpha,
-                static_cast<const float*>(left.data()),   lda,
-                static_cast<const float*>(right.data()),  ldb, beta,
-                static_cast<      float*>(result.data()), ldc);
+                left.data<float>(),   lda,
+                right.data<float>(),  ldb, beta,
+                result.data<float>(), ldc);
         }
         else if(left.precision() == DoublePrecision())
         {
@@ -109,9 +118,9 @@ void gemm(Matrix& result, double beta,
                 transposeLeft  ? AtlasLibrary::CblasTrans : AtlasLibrary::CblasNoTrans,
                 transposeRight ? AtlasLibrary::CblasTrans : AtlasLibrary::CblasNoTrans,
                 m, n, k, alpha,
-                static_cast<const double*>(left.data()),   lda,
-                static_cast<const double*>(right.data()),  ldb, beta,
-                static_cast<      double*>(result.data()), ldc);
+                left.data<double>(),   lda,
+                right.data<double>(),  ldb, beta,
+                result.data<double>(), ldc);
         }
         else
         {

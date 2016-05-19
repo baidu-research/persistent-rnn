@@ -379,9 +379,9 @@ public:
 
 public:
     template<typename T>
-    CUDA_DECORATOR T operator()(const T& l) const
+    CUDA_DECORATOR T operator()(const T& x, const T& y) const
     {
-        return (l >= T(20.0)) ? T(0.0) : ((l <= T(0.0)) ? T(0.0) : T(1.0));
+        return (((x > T(0.0)) && (x < T(20.0))) * y);
     }
 
 };
@@ -761,7 +761,7 @@ typedef std::tuple<Add, Subtract, Multiply, Divide, Maximum, Minimum,
                    Equal, LessThan, NotEqual, CopyRight> AllBinaryOperations;
 
 typedef std::tuple<Add, Subtract, Multiply, Divide, Log, Exp, Pow, Abs, Sqrt, RectifiedLinear,
-                   RectifiedLinearDerivative, Sigmoid, SigmoidDerivative, Negate, Maximum,
+                   Sigmoid, Negate, Maximum,
                    Minimum, Equal, LessThan, NotEqual, Fill, Square, SquareAndScale, Inverse
                    > AllUnaryOperations;
 

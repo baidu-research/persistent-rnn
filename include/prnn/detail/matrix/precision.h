@@ -4,6 +4,8 @@
 // Persistent RNN Includes
 #include <prnn/detail/types/float16.h>
 
+#include <prnn/detail/parallel/cuda.h>
+
 // Standard Library Includes
 #include <tuple>
 #include <memory>
@@ -33,7 +35,17 @@ public:
     Type type() const;
 
 public:
-    size_t size() const;
+    CUDA_DECORATOR size_t size() const
+    {
+        switch(_type)
+        {
+        case Half: return sizeof(float)/2;
+        case Single: return sizeof(float);
+        case Double: return sizeof(double);
+        default:
+            return 0;
+        }
+    }
 
 public:
     std::string toString() const;
