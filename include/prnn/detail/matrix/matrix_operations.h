@@ -2,19 +2,24 @@
 #pragma once
 
 // Forward Declarations
-namespace prnn { namespace matrix { class Matrix;    } }
-namespace prnn { namespace matrix { class Operation; } }
-namespace prnn { namespace matrix { class Precision; } }
-namespace prnn { namespace matrix { class Dimension; } }
+namespace prnn { namespace matrix { class ConstDynamicView; } }
+namespace prnn { namespace matrix { class Matrix;           } }
+namespace prnn { namespace matrix { class DynamicView;      } }
+namespace prnn { namespace matrix { class Operation;        } }
+namespace prnn { namespace matrix { class Precision;        } }
+namespace prnn { namespace matrix { class Dimension;        } }
 
 namespace prnn
 {
 namespace matrix
 {
 
+void apply(const DynamicView& result, const ConstDynamicView& left,
+    const ConstDynamicView& right, const Operation& op);
 void apply(Matrix& result, const Matrix& left, const Matrix& right, const Operation& op);
 Matrix apply(const Matrix& left, const Matrix& right, const Operation& op);
 
+void apply(const DynamicView& result, const ConstDynamicView& input, const Operation& op);
 void apply(Matrix& result, const Matrix& input, const Operation& op);
 Matrix apply(const Matrix& input, const Operation& op);
 

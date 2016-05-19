@@ -35,6 +35,11 @@ public:
         return _size;
     }
 
+    CUDA_DECORATOR size_t elements() const
+    {
+        return size().product();
+    }
+
     CUDA_DECORATOR const Dimension& stride() const
     {
         return _stride;
@@ -43,6 +48,11 @@ public:
     CUDA_DECORATOR const Precision& precision() const
     {
         return _precision;
+    }
+
+    CUDA_DECORATOR bool isContiguous() const
+    {
+        return linearStride(size()) == stride();
     }
 
 public:
@@ -95,6 +105,13 @@ public:
 
     }
 
+    ConstDynamicView(const DynamicView& matrix)
+    : _data(matrix.data<void>()), _size(matrix.size()), _stride(matrix.stride()),
+      _precision(matrix.precision())
+    {
+
+    }
+
     CUDA_DECORATOR ConstDynamicView(const void* data,
         const Dimension& size, const Dimension& stride, const Precision& precision)
     : _data(data), _size(size), _stride(stride), _precision(precision)
@@ -108,6 +125,11 @@ public:
         return _size;
     }
 
+    CUDA_DECORATOR size_t elements() const
+    {
+        return size().product();
+    }
+
     CUDA_DECORATOR const Dimension& stride() const
     {
         return _stride;
@@ -116,6 +138,11 @@ public:
     CUDA_DECORATOR const Precision& precision() const
     {
         return _precision;
+    }
+
+    CUDA_DECORATOR bool isContiguous() const
+    {
+        return linearStride(size()) == stride();
     }
 
 public:
@@ -162,6 +189,12 @@ public:
 
     }
 
+    MatrixView(const DynamicView& matrix)
+    : _data(matrix.data<T>()), _size(matrix.size()), _stride(matrix.stride())
+    {
+
+    }
+
     CUDA_DECORATOR MatrixView(T* data, const Dimension& size, const Dimension& stride)
     : _data(data), _size(size), _stride(stride)
     {
@@ -204,6 +237,12 @@ class ConstMatrixView
 public:
     ConstMatrixView(const Matrix& matrix)
     : ConstMatrixView(static_cast<const T*>(matrix.data()), matrix.size(), matrix.stride())
+    {
+
+    }
+
+    ConstMatrixView(const ConstDynamicView& matrix)
+    : _data(matrix.data<T>()), _size(matrix.size()), _stride(matrix.stride())
     {
 
     }
@@ -280,6 +319,12 @@ CUDA_DECORATOR inline ConstDynamicView reshape(const ConstDynamicView& input,
     const Dimension& newSize)
 {
     return ConstDynamicView(input.data<void>(), newSize,
+        fillInStride(newSize, input.stride(), input.size()), input.precision());
+}
+
+CUDA_DECORATOR inline DynamicView reshape(const DynamicView& input, const Dimension& newSize)
+{
+    return DynamicView(input.data<void>(), newSize,
         fillInStride(newSize, input.stride(), input.size()), input.precision());
 }
 

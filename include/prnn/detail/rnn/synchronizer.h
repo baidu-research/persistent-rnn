@@ -58,7 +58,7 @@ public:
         index_t failed = 0;
 
         prnn::parallel::CudaRuntimeLibrary::cudaMemcpyAsync(get_barrier_failed_flag(), &failed,
-            sizeof(index_t), prnn::parallel::CudaRuntimeLibrary::cudaMemcpyHostToDevice, stream_);
+            sizeof(index_t), prnn::parallel::CudaRuntimeLibrary::cudaMemcpyDefault, stream_);
     }
 
     bool not_finished() const {
@@ -88,7 +88,7 @@ private:
 
         prnn::parallel::CudaRuntimeLibrary::cudaMemcpyAsync(&failed,
             get_barrier_failed_flag(), sizeof(index_t),
-            prnn::parallel::CudaRuntimeLibrary::cudaMemcpyDeviceToHost, stream_);
+            prnn::parallel::CudaRuntimeLibrary::cudaMemcpyDefault, stream_);
 
         return failed != 0;
     }
@@ -98,7 +98,7 @@ private:
 
         prnn::parallel::CudaRuntimeLibrary::cudaMemcpyAsync(&current_phase,
             get_current_phase_counter(), sizeof(index_t),
-            prnn::parallel::CudaRuntimeLibrary::cudaMemcpyDeviceToHost, stream_);
+            prnn::parallel::CudaRuntimeLibrary::cudaMemcpyDefault, stream_);
 
         return current_phase;
     }

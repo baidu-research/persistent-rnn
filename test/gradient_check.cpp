@@ -26,7 +26,7 @@ void TestSimpleRecurrentOps()
     prnn::matrix::srand(377);
 
     size_t layer_size = 512;
-    size_t timesteps  = 100;
+    size_t timesteps  = 10;
     size_t mini_batch = 2;
 
     prnn::RecurrentOpsHandle handle(layer_size, mini_batch, timesteps,
@@ -137,7 +137,7 @@ void assertGreaterThanOrEqual(double left, double right)
 
 void TestSimpleRecurrentOpsGradientCheck(prnn::RecurrentLayerDirection direction)
 {
-    auto precision = prnn::matrix::DoublePrecision();
+    auto precision = prnn::matrix::SinglePrecision();
 
     std::default_random_engine random_engine;
 
@@ -342,11 +342,11 @@ void RunTest(const std::string& testName, void (*function)(void) )
     try
     {
         function();
-        std::cout << "Test " << testName << " Passed\n";
+        std::cout << "Test '" << testName << "' Passed\n";
     }
     catch(std::exception& e)
     {
-        std::cout << "Test " << testName << " Failed\n";
+        std::cout << "Test '" << testName << "' Failed with error '" << e.what() << "'\n";
     }
 }
 
@@ -354,8 +354,9 @@ int main(int argc, char** argv)
 {
     prnn::util::enable_all_logs();
 
+    //RunTest("Simple Recurrent Ops Test",            TestSimpleRecurrentOps              );
     RunTest("Recurrent Forward Ops Gradient Check", TestRecurrentOpsGradientCheck       );
-    RunTest("Recurrent Reverse Ops Gradient Check", TestReverseRecurrentOpsGradientCheck);
+    //RunTest("Recurrent Reverse Ops Gradient Check", TestReverseRecurrentOpsGradientCheck);
 
     return 0;
 }

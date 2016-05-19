@@ -758,7 +758,8 @@ typedef std::tuple<Add, Subtract, Multiply, Divide, Log, Exp, Pow, Abs, Sqrt, Re
                    > AllOperations;
 
 typedef std::tuple<Add, Subtract, Multiply, Divide, Maximum, Minimum,
-                   Equal, LessThan, NotEqual, CopyRight> AllBinaryOperations;
+                   Equal, LessThan, NotEqual, CopyRight, RectifiedLinearDerivative,
+                   TanhDerivative> AllBinaryOperations;
 
 typedef std::tuple<Add, Subtract, Multiply, Divide, Log, Exp, Pow, Abs, Sqrt, RectifiedLinear,
                    Sigmoid, Negate, Maximum,

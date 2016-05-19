@@ -175,7 +175,7 @@ private:
           reduction_threads_per_value(parameters.reduction_threads_per_value)
         {
 
-            if (Config::DIRECTION == prnn::RECURRENT_FORWARD) {
+            if (Config::DIRECTION == prnn::RECURRENT_REVERSE) {
                 index_t iteration = parameters.timesteps * parameters.mini_batch_size -
                     parameters.first_iteration - 1;
 

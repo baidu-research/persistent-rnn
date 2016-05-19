@@ -77,7 +77,8 @@ public:
 };
 
 template<typename OperationType, typename T>
-void applyOverPrecisions(Matrix& result, const Matrix& left, const Matrix& right,
+void applyOverPrecisions(const DynamicView& result, const ConstDynamicView& left,
+    const ConstDynamicView& right,
     const Operation& op, const Precision& precision, std::tuple<T> precisions)
 {
     typedef T PrecisionPrimitive;
@@ -91,9 +92,9 @@ void applyOverPrecisions(Matrix& result, const Matrix& left, const Matrix& right
 
     if(result.isContiguous() && left.isContiguous() && right.isContiguous())
     {
-        auto resultBase = static_cast<NativeType*>(result.data());
-        auto leftBase   = static_cast<const NativeType*>(left.data());
-        auto rightBase  = static_cast<const NativeType*>(right.data());
+        auto resultBase = result.data<NativeType>();
+        auto leftBase   = left.data<NativeType>();
+        auto rightBase  = right.data<NativeType>();
 
         auto lambda = BinaryApplyLambda<NativeType, OperationType>
             {resultBase, leftBase, rightBase, nativeOperation, elements};
@@ -114,7 +115,8 @@ void applyOverPrecisions(Matrix& result, const Matrix& left, const Matrix& right
 }
 
 template<typename OperationType, typename PossiblePrecisions>
-void applyOverPrecisions(Matrix& result, const Matrix& left, const Matrix& right, const Operation& op,
+void applyOverPrecisions(const DynamicView& result, const ConstDynamicView& left,
+    const ConstDynamicView& right, const Operation& op,
     const Precision& precision, PossiblePrecisions precisions)
 {
     typedef typename std::tuple_element<0, PossiblePrecisions>::type PossiblePrecisionType;
@@ -128,31 +130,36 @@ void applyOverPrecisions(Matrix& result, const Matrix& left, const Matrix& right
     {
         typedef typename util::RemoveFirstType<PossiblePrecisions>::type RemainingPrecisions;
 
-        applyOverPrecisions<OperationType>(result, left, right, op, precision, RemainingPrecisions());
+        applyOverPrecisions<OperationType>(result, left, right,
+            op, precision, RemainingPrecisions());
     }
 }
 
 
 template<typename T>
-void applyOverOperations(Matrix& result, const Matrix& left, const Matrix& right, const Operation& op,
+void applyOverOperations(const DynamicView& result, const ConstDynamicView& left,
+    const ConstDynamicView& right, const Operation& op,
     const Precision& precision, const std::tuple<T>& operations)
 {
     typedef T PossibleOperationType;
 
     assert(op == PossibleOperationType());
 
-    applyOverPrecisions<PossibleOperationType, AllPrecisions>(result, left, right, op, precision, AllPrecisions());
+    applyOverPrecisions<PossibleOperationType, AllPrecisions>(result, left, right,
+        op, precision, AllPrecisions());
 }
 
 template<typename PossibleOperations>
-void applyOverOperations(Matrix& result, const Matrix& left, const Matrix& right,
+void applyOverOperations(const DynamicView& result, const ConstDynamicView& left,
+    const ConstDynamicView& right,
     const Operation& op, const Precision& precision, const PossibleOperations& operations)
 {
     typedef typename std::tuple_element<0, PossibleOperations>::type PossibleOperationType;
 
     if(op == PossibleOperationType())
     {
-        applyOverOperations(result, left, right, op, precision, std::tuple<PossibleOperationType>());
+        applyOverOperations(result, left, right, op, precision,
+            std::tuple<PossibleOperationType>());
     }
     else
     {
@@ -162,15 +169,18 @@ void applyOverOperations(Matrix& result, const Matrix& left, const Matrix& right
     }
 }
 
-void applyOverOperations(Matrix& result, const Matrix& left, const Matrix& right,
+void applyOverOperations(const DynamicView& result, const ConstDynamicView& left,
+    const ConstDynamicView& right,
     const Operation& op, const Precision& precision)
 {
-    applyOverOperations<AllBinaryOperations>(result, left, right, op, precision, AllBinaryOperations());
+    applyOverOperations<AllBinaryOperations>(result, left, right, op, precision,
+        AllBinaryOperations());
 }
 
 }
 
-void apply(Matrix& result, const Matrix& left, const Matrix& right, const Operation& op)
+void apply(const DynamicView& result, const ConstDynamicView& left,
+    const ConstDynamicView& right, const Operation& op)
 {
     auto precision = left.precision();
 
@@ -182,9 +192,14 @@ void apply(Matrix& result, const Matrix& left, const Matrix& right, const Operat
     detail::applyOverOperations(result, left, right, op, precision);
 }
 
+void apply(Matrix& result, const Matrix& left, const Matrix& right, const Operation& op)
+{
+    apply(DynamicView(result), ConstDynamicView(left), ConstDynamicView(right), op);
+}
+
 Matrix apply(const Matrix& left, const Matrix& right, const Operation& op)
 {
-    assert(left.size() == right.size());
+    assert(left.size()      == right.size());
     assert(left.precision() == right.precision());
 
     Matrix temp(left.size(), left.precision());
@@ -246,7 +261,7 @@ public:
 };
 
 template<typename OperationType, typename T>
-void applyOverPrecisions(Matrix& result, const Matrix& input,
+void applyOverPrecisions(const DynamicView& result, const ConstDynamicView& input,
     const Operation& op, const Precision& precision, std::tuple<T> precisions)
 {
     typedef T PrecisionPrimitive;
@@ -260,8 +275,8 @@ void applyOverPrecisions(Matrix& result, const Matrix& input,
 
     if(input.isContiguous() && result.isContiguous())
     {
-        auto resultBase = static_cast<NativeType*>(result.data());
-        auto inputBase  = static_cast<const NativeType*>(input.data());
+        auto resultBase = result.data<NativeType>();
+        auto inputBase  = input.data<NativeType>();
 
         auto lambda = UnaryApplyLambda<NativeType, OperationType>
             {resultBase, inputBase, elements, nativeOperation};
@@ -270,7 +285,6 @@ void applyOverPrecisions(Matrix& result, const Matrix& input,
     }
     else
     {
-
         MatrixView<NativeType>      resultView(result);
         ConstMatrixView<NativeType> inputView(input);
 
@@ -282,8 +296,8 @@ void applyOverPrecisions(Matrix& result, const Matrix& input,
 }
 
 template<typename OperationType, typename PossiblePrecisions>
-void applyOverPrecisions(Matrix& result, const Matrix& input, const Operation& op,
-    const Precision& precision, PossiblePrecisions precisions)
+void applyOverPrecisions(const DynamicView& result, const ConstDynamicView& input,
+    const Operation& op, const Precision& precision, PossiblePrecisions precisions)
 {
     typedef typename std::tuple_element<0, PossiblePrecisions>::type PossiblePrecisionType;
 
@@ -302,8 +316,8 @@ void applyOverPrecisions(Matrix& result, const Matrix& input, const Operation& o
 
 
 template<typename T>
-void applyOverOperations(Matrix& result, const Matrix& input, const Operation& op,
-    const Precision& precision, const std::tuple<T>& operations)
+void applyOverOperations(const DynamicView& result, const ConstDynamicView& input,
+    const Operation& op, const Precision& precision, const std::tuple<T>& operations)
 {
     typedef T PossibleOperationType;
 
@@ -314,7 +328,7 @@ void applyOverOperations(Matrix& result, const Matrix& input, const Operation& o
 }
 
 template<typename PossibleOperations>
-void applyOverOperations(Matrix& result, const Matrix& input,
+void applyOverOperations(const DynamicView& result, const ConstDynamicView& input,
     const Operation& op, const Precision& precision, const PossibleOperations& operations)
 {
     typedef typename std::tuple_element<0, PossibleOperations>::type PossibleOperationType;
@@ -331,7 +345,7 @@ void applyOverOperations(Matrix& result, const Matrix& input,
     }
 }
 
-void applyOverOperations(Matrix& result, const Matrix& input,
+void applyOverOperations(const DynamicView& result, const ConstDynamicView& input,
     const Operation& op, const Precision& precision)
 {
     applyOverOperations<AllUnaryOperations>(result, input, op, precision, AllUnaryOperations());
@@ -339,9 +353,14 @@ void applyOverOperations(Matrix& result, const Matrix& input,
 
 }
 
-void apply(Matrix& result, const Matrix& input, const Operation& op)
+void apply(const DynamicView& result, const ConstDynamicView& input, const Operation& op)
 {
     detail::applyOverOperations(result, input, op, input.precision());
+}
+
+void apply(Matrix& result, const Matrix& input, const Operation& op)
+{
+    apply(DynamicView(result), ConstDynamicView(input), op);
 }
 
 Matrix apply(const Matrix& input, const Operation& op)

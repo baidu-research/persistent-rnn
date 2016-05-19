@@ -300,6 +300,48 @@ void forwardPropRecurrentOverActivationFunctions(const matrix::DynamicView& acti
         handle, prnn::matrix::AllRecurrentForwardOps());
 }
 
+void genericForwardPropRecurrent(
+    const matrix::DynamicView& activations,
+    const matrix::ConstDynamicView& weights,
+    const RecurrentOpsHandle& handle)
+{
+    bool reversed = (handle.direction == prnn::RECURRENT_REVERSE);
+
+    size_t timesteps     = activations.size()[2];
+    size_t miniBatchSize = activations.size()[1];
+    size_t layerSize     = activations.size()[0];
+
+    size_t currentTimestep = reversed ? timesteps - 1 : 0;
+
+    // Start value
+    auto currentInput = slice(activations, {0, 0, currentTimestep},
+        {layerSize, miniBatchSize, currentTimestep + 1});
+
+    apply(currentInput, currentInput, *handle.activationFunction.forwardOperation);
+
+    // Propagate through time
+    for(size_t timestep = 1; timestep < timesteps; ++timestep)
+    {
+        currentTimestep = reversed ? timesteps - timestep - 1 : timestep;
+
+        auto nextInput = slice(activations, {0, 0, currentTimestep},
+            {layerSize, miniBatchSize, currentTimestep + 1});
+
+        auto reshapedNextInput    = reshape(nextInput,    {layerSize, miniBatchSize});
+        auto reshapedCurrentInput = reshape(currentInput, {layerSize, miniBatchSize});
+
+        gemm(
+            reshapedNextInput,           1.0,
+            weights,              false, 1.0,
+            reshapedCurrentInput, false);
+
+        currentInput = nextInput;
+
+        apply(currentInput, currentInput, *handle.activationFunction.forwardOperation);
+    }
+
+}
+
 }
 
 void forwardPropRecurrent(
@@ -307,6 +349,12 @@ void forwardPropRecurrent(
     const matrix::ConstDynamicView& weights,
     const matrix::DynamicView& scratch, const RecurrentOpsHandle& handle)
 {
+    if(!parallel::isCudaEnabled())
+    {
+        detail::genericForwardPropRecurrent(activations, weights, handle);
+        return;
+    }
+
     assert(activations.precision() == weights.precision());
     assert(activations.precision() == scratch.precision());
 
@@ -504,12 +552,67 @@ void backPropDeltasRecurrentOverActivationFunctions(const matrix::DynamicView& d
         handle, prnn::matrix::AllRecurrentBackwardOps());
 }
 
+void genericBackPropDeltasRecurrent(const matrix::DynamicView& deltas,
+    const matrix::ConstDynamicView& weights, const matrix::DynamicView& activations,
+    const RecurrentOpsHandle& handle)
+{
+    bool reversed = (handle.direction == prnn::RECURRENT_REVERSE);
+
+    size_t maxTimesteps  = deltas.size()[2];
+    size_t miniBatchSize = deltas.size()[1];
+    size_t layerSize     = deltas.size()[0];
+
+    auto currentTimestep = reversed ? 0 : maxTimesteps - 1;
+
+    // Start value
+    auto currentDeltas = slice(deltas,
+        {0, 0, currentTimestep}, {layerSize, miniBatchSize, currentTimestep + 1});
+    auto currentActivations = slice(activations,
+        {0, 0, currentTimestep}, {layerSize, miniBatchSize, currentTimestep + 1});
+
+    apply(currentDeltas, currentDeltas, currentActivations,
+        *handle.activationFunction.reverseOperation);
+
+    // go over all timesteps in reverse
+    for(size_t t = 1; t < maxTimesteps; ++t)
+    {
+        size_t timestep = reversed ? t : maxTimesteps - t - 1;
+
+        auto previousDeltas = slice(deltas, {0, 0, timestep},
+            {layerSize, miniBatchSize, timestep + 1});
+
+        auto reshapedPreviousDeltas = reshape(previousDeltas, {layerSize, miniBatchSize});
+        auto reshapedCurrentDeltas  = reshape(currentDeltas,  {layerSize, miniBatchSize});
+
+        gemm(
+            reshapedPreviousDeltas, 1.0,
+            weights, true, 1.0,
+            reshapedCurrentDeltas, false
+        );
+
+        currentDeltas = previousDeltas;
+
+        currentActivations = slice(activations, {0, 0, timestep},
+            {layerSize, miniBatchSize, timestep + 1});
+
+        apply(currentDeltas, currentDeltas, currentActivations,
+            *handle.activationFunction.reverseOperation);
+    }
+
+}
+
 }
 
 void backPropDeltasRecurrent(const matrix::DynamicView& deltas,
     const matrix::ConstDynamicView& weights, const matrix::DynamicView& activations,
     const matrix::DynamicView& scratch, const RecurrentOpsHandle& handle)
 {
+    if(!parallel::isCudaEnabled())
+    {
+        detail::genericBackPropDeltasRecurrent(deltas, weights, activations, handle);
+        return;
+    }
+
     detail::backPropDeltasRecurrentOverActivationFunctions(deltas, weights, activations,
         scratch, handle);
 }
