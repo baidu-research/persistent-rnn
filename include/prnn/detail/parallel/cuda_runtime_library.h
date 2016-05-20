@@ -33,6 +33,7 @@ public:
 
     enum cudaDeviceAttr
     {
+        cudaDevAttrMultiProcessorCount = 16,
         cudaDevAttrComputeCapabilityMajor = 75,
         cudaDevAttrComputeCapabilityMinor = 76
     };

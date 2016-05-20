@@ -7,6 +7,7 @@
 #include <persistent_rnn_high_level.h>
 
 #include <prnn/detail/matrix/matrix_view.h>
+#include <prnn/detail/matrix/matrix_operations.h>
 
 #include <prnn/detail/rnn/recurrent_ops_handle.h>
 #include <prnn/detail/rnn/recurrent_ops.h>
@@ -14,10 +15,23 @@
 namespace prnn
 {
 
+static matrix::Dimension extendDimensions(const matrix::Dimension& dimensions,
+    const matrix::Precision& precision)
+{
+    auto newDimensions = dimensions;
+
+    newDimensions[0] = prnn::rnn::getMaximumSizeRNNForThisGPU(precision);
+    newDimensions[2] += 1;
+
+    return newDimensions;
+}
+
 static matrix::Matrix getForwardPropScratch(const RecurrentOpsHandle& handle,
     const matrix::Dimension& dimension, const matrix::Precision& precision)
 {
-    return matrix::Matrix(dimension, precision);
+    auto scratchDimension = extendDimensions(dimension, precision);
+
+    return matrix::zeros(scratchDimension, precision);
 }
 
 void forwardPropRecurrent(matrix::Matrix& activations,
@@ -33,7 +47,7 @@ void forwardPropRecurrent(matrix::Matrix& activations,
 static matrix::Matrix getBackPropDeltasScratch(const RecurrentOpsHandle& handle,
     const matrix::Dimension& dimension, const matrix::Precision& precision)
 {
-    return matrix::Matrix(dimension, precision);
+    return getForwardPropScratch(handle, dimension, precision);
 }
 
 void backPropDeltasRecurrent(matrix::Matrix& deltas,
@@ -55,7 +69,7 @@ void backPropDeltasRecurrent(matrix::Matrix& deltas,
 static matrix::Matrix getBackPropGradientsScratch(const RecurrentOpsHandle& handle,
     const matrix::Dimension& dimension, const matrix::Precision& precision)
 {
-    return matrix::Matrix(dimension, precision);
+    return matrix::Matrix();
 }
 
 void backPropGradientsRecurrent(matrix::Matrix& dWeights,

@@ -28,9 +28,12 @@ namespace detail
 class TileSizeSelector
 {
 public:
-    TileSizeSelector(size_t major, size_t minor)
+    TileSizeSelector(size_t major, size_t minor, size_t smCount,
+        const matrix::Precision& precision)
     : streamingMultiprocessorVersionMajor(major),
-      streamingMultiprocessorVersionMinor(minor)
+      streamingMultiprocessorVersionMinor(minor),
+      streamingMultiprocessorCount(smCount),
+      precision(precision)
     {
 
     }
@@ -38,17 +41,24 @@ public:
 public:
     size_t getMaximumSize() const
     {
-        if(streamingMultiprocessorVersionMajor == 5)
+        if(streamingMultiprocessorVersionMajor == 6 && streamingMultiprocessorCount >= 60)
+        {
+            if(precision == matrix::HalfPrecision())
+            {
+                return 2720;
+            }
+            else
+            {
+                return 1820;
+            }
+        }
+        else if(streamingMultiprocessorVersionMajor == 5 && streamingMultiprocessorCount >= 24)
         {
             return 1088;
         }
-        else if(streamingMultiprocessorVersionMajor == 6)
-        {
-            return 2720;
-        }
         else
         {
-            return 4;
+            return 224;
         }
     }
 
@@ -56,9 +66,14 @@ public:
     size_t streamingMultiprocessorVersionMajor;
     size_t streamingMultiprocessorVersionMinor;
 
+    size_t streamingMultiprocessorCount;
+
+public:
+    matrix::Precision precision;
+
 };
 
-void getGPUMajorAndMinorVersion(int& major, int& minor)
+void getGPUMajorAndMinorVersion(int& major, int& minor, int& smCount)
 {
     if(prnn::parallel::isCudaEnabled())
     {
@@ -66,19 +81,22 @@ void getGPUMajorAndMinorVersion(int& major, int& minor)
             prnn::parallel::CudaRuntimeLibrary::cudaDevAttrComputeCapabilityMajor, 0);
         prnn::parallel::CudaRuntimeLibrary::cudaDeviceGetAttribute(&minor,
             prnn::parallel::CudaRuntimeLibrary::cudaDevAttrComputeCapabilityMajor, 0);
+        prnn::parallel::CudaRuntimeLibrary::cudaDeviceGetAttribute(&smCount,
+            prnn::parallel::CudaRuntimeLibrary::cudaDevAttrMultiProcessorCount, 0);
     }
 }
 
 } // namespace detail
 
-size_t getMaximumSizeRNNForThisGPU()
+size_t getMaximumSizeRNNForThisGPU(const matrix::Precision& precision)
 {
     int major = 0;
     int minor = 0;
+    int smCount = 0;
 
-    detail::getGPUMajorAndMinorVersion(major, minor);
+    detail::getGPUMajorAndMinorVersion(major, minor, smCount);
 
-    return detail::TileSizeSelector(major, minor).getMaximumSize();
+    return detail::TileSizeSelector(major, minor, smCount, precision).getMaximumSize();
 }
 
 namespace detail
@@ -145,7 +163,7 @@ template<RecurrentLayerDirection direction, typename T, size_t sms, size_t smMaj
 class TileSelector
 {
 public:
-    typedef TileConfig<24, 1088, 1088, 224, 224, 14, 14, direction> TileSize;
+    typedef TileConfig<sms, 224, 224, 224, 224, 14, 14, direction> TileSize;
 
 };
 
@@ -161,6 +179,13 @@ class TileSelector<direction, float16, 60, 6>
 {
 public:
     typedef TileConfig<60, 2720, 2720, 352, 352, 22, 22, direction> TileSize;
+};
+
+template<RecurrentLayerDirection direction>
+class TileSelector<direction, float16, 24, 5>
+{
+public:
+    typedef TileConfig<24, 1088, 1088, 224, 224, 14, 14, direction> TileSize;
 };
 
 template <typename ActivationFunction, typename T, RecurrentLayerDirection direction>
@@ -179,10 +204,9 @@ void forwardPropRecurrent(const matrix::DynamicView& activations,
 
     int major = 0;
     int minor = 0;
-
-    getGPUMajorAndMinorVersion(major, minor);
-
     int smCount = 0;
+
+    getGPUMajorAndMinorVersion(major, minor, smCount);
 
     if(major == 6 && smCount >= 60)
     {
@@ -194,9 +218,19 @@ void forwardPropRecurrent(const matrix::DynamicView& activations,
         dispatchForwardPropRecurrent<ActivationFunction, ArchParams>(activationData, weightsData,
             scratchData, architectureConfig);
     }
-    else
+    else if(major == 5 && smCount >= 24)
     {
         typedef typename TileSelector<direction, RealType, 24, 5>::TileSize TileSize;
+        typedef RecurrentArchitectureParameters<RealType, TileSize> ArchParams;
+
+        ArchParams architectureConfig(handle);
+
+        dispatchForwardPropRecurrent<ActivationFunction, ArchParams>(activationData, weightsData,
+            scratchData, architectureConfig);
+    }
+    else
+    {
+        typedef typename TileSelector<direction, RealType, 1, 0>::TileSize TileSize;
         typedef RecurrentArchitectureParameters<RealType, TileSize> ArchParams;
 
         ArchParams architectureConfig(handle);
@@ -430,10 +464,9 @@ void backPropDeltasRecurrent(const matrix::DynamicView& deltas,
 
     int major = 0;
     int minor = 0;
-
-    getGPUMajorAndMinorVersion(major, minor);
-
     int smCount = 0;
+
+    getGPUMajorAndMinorVersion(major, minor, smCount);
 
     if(major == 6 && smCount >= 60)
     {
@@ -445,9 +478,19 @@ void backPropDeltasRecurrent(const matrix::DynamicView& deltas,
         dispatchBackPropDeltasRecurrent<ActivationFunction, ArchParams>(deltaData,
             weightsData, activationData, scratchData, architectureConfig);
     }
-    else
+    else if(major == 5 && smCount >= 24)
     {
         typedef typename TileSelector<direction, RealType, 24, 5>::TileSize TileSize;
+        typedef RecurrentArchitectureParameters<RealType, TileSize> ArchParams;
+
+        ArchParams architectureConfig(handle);
+
+        dispatchBackPropDeltasRecurrent<ActivationFunction, ArchParams>(deltaData,
+            weightsData, activationData, scratchData, architectureConfig);
+    }
+    else
+    {
+        typedef typename TileSelector<direction, RealType, 1, 0>::TileSize TileSize;
         typedef RecurrentArchitectureParameters<RealType, TileSize> ArchParams;
 
         ArchParams architectureConfig(handle);
@@ -570,7 +613,7 @@ void genericBackPropDeltasRecurrent(const matrix::DynamicView& deltas,
     auto currentActivations = slice(activations,
         {0, 0, currentTimestep}, {layerSize, miniBatchSize, currentTimestep + 1});
 
-    apply(currentDeltas, currentDeltas, currentActivations,
+    apply(currentDeltas, currentActivations, currentDeltas,
         *handle.activationFunction.reverseOperation);
 
     // go over all timesteps in reverse
@@ -595,7 +638,7 @@ void genericBackPropDeltasRecurrent(const matrix::DynamicView& deltas,
         currentActivations = slice(activations, {0, 0, timestep},
             {layerSize, miniBatchSize, timestep + 1});
 
-        apply(currentDeltas, currentDeltas, currentActivations,
+        apply(currentDeltas, currentActivations, currentDeltas,
             *handle.activationFunction.reverseOperation);
     }
 

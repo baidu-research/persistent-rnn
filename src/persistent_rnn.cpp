@@ -406,7 +406,7 @@ prnnStatus_t prnnGetRNNLinLayerBiasParams(prnnHandle_t handle,
 
 static bool isSupported(prnnRNNDescriptor_t desc)
 {
-    if(desc->hiddenSize > prnn::rnn::getMaximumSizeRNNForThisGPU())
+    if(desc->hiddenSize > prnn::rnn::getMaximumSizeRNNForThisGPU(getPrecision(desc->dataType)))
     {
         return false;
     }

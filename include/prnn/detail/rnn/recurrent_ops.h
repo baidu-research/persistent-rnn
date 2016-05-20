@@ -8,6 +8,7 @@ namespace prnn { class RecurrentOpsHandle; }
 
 namespace prnn { namespace matrix { class DynamicView;      } }
 namespace prnn { namespace matrix { class ConstDynamicView; } }
+namespace prnn { namespace matrix { class Precision;        } }
 
 
 namespace prnn
@@ -16,7 +17,7 @@ namespace prnn
 namespace rnn
 {
 
-size_t getMaximumSizeRNNForThisGPU();
+size_t getMaximumSizeRNNForThisGPU(const matrix::Precision&);
 
 void forwardPropRecurrent(
     const matrix::DynamicView& activations,

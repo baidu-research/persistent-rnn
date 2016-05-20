@@ -6,7 +6,7 @@
 
 #include <prnn/detail/util/atomics.h>
 
-#define DEBUG_RECURRENT_OPS 1
+#define DEBUG_RECURRENT_OPS 0
 
 #if DEBUG_RECURRENT_OPS
 
