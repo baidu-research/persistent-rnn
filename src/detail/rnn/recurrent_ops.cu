@@ -90,8 +90,8 @@ void getGPUMajorAndMinorVersion(int& major, int& minor, int& smCount)
 
 size_t getMaximumSizeRNNForThisGPU(const matrix::Precision& precision)
 {
-    int major = 0;
-    int minor = 0;
+    int major   = 0;
+    int minor   = 0;
     int smCount = 0;
 
     detail::getGPUMajorAndMinorVersion(major, minor, smCount);
@@ -106,7 +106,8 @@ template <typename ArchitectureConfig>
 static index_t* getSynchronizerScratch(typename ArchitectureConfig::RealType* scratch,
     const ArchitectureConfig& archParameters)
 {
-    size_t totalSize = archParameters.handle.layerSize * archParameters.handle.miniBatchSize *
+    size_t totalSize = archParameters.activations_per_grid() *
+        archParameters.handle.miniBatchSize *
         archParameters.handle.timesteps;
 
     return reinterpret_cast<index_t*>(scratch + totalSize);
@@ -151,7 +152,7 @@ void dispatchForwardPropRecurrent(typename ArchitectureConfig::RealType* activat
         synchronizer.check_for_failure();
 
         if (synchronizer.not_finished()) {
-            util::log("RecurrentOperations") << " launch failed, restarting at phase "
+            util::log("RecurrentOperations") << " forward prop launch failed, restarting at phase "
                 << synchronizer.get_current_phase() << ".\n";
             synchronizer.reset_failed_flag();
         }
@@ -383,7 +384,7 @@ void forwardPropRecurrent(
     const matrix::ConstDynamicView& weights,
     const matrix::DynamicView& scratch, const RecurrentOpsHandle& handle)
 {
-    if(!parallel::isCudaEnabled())
+    //if(!parallel::isCudaEnabled())
     {
         detail::genericForwardPropRecurrent(activations, weights, handle);
         return;
@@ -439,7 +440,7 @@ void dispatchBackPropDeltasRecurrent(
         synchronizer.check_for_failure();
 
         if (synchronizer.not_finished()) {
-            util::log("RecurrentOperations") << " launch failed, restarting at phase "
+            util::log("RecurrentOperations") << " back prop launch failed, restarting at phase "
                 << synchronizer.get_current_phase() << ".\n";
             synchronizer.reset_failed_flag();
         }
@@ -512,12 +513,12 @@ void backPropDeltasRecurrentOverPrecisions(const matrix::DynamicView& deltas,
 
     if(handle.direction == prnn::RECURRENT_REVERSE)
     {
-        backPropDeltasRecurrent<ActivationFunction, PossiblePrecision, prnn::RECURRENT_REVERSE>(
+        backPropDeltasRecurrent<ActivationFunction, PossiblePrecision, prnn::RECURRENT_FORWARD>(
             deltas, weights, activations, scratch, handle, precision);
     }
     else
     {
-        backPropDeltasRecurrent<ActivationFunction, PossiblePrecision, prnn::RECURRENT_FORWARD>(
+        backPropDeltasRecurrent<ActivationFunction, PossiblePrecision, prnn::RECURRENT_REVERSE>(
             deltas, weights, activations, scratch, handle, precision);
     }
 }

@@ -13,7 +13,7 @@
 #define dprintf(...) do { if( blockIdx.x == 0 && blockIdx.y == 0) \
     { std::printf(__VA_ARGS__); } } while(0)
 
-#define t0printf(...) do { if(threadIdx.x == 0 && threadIdx.y == 0 && \
+#define t0printf(...) do { if(threadIdx.x == 1 && threadIdx.y == 0 && \
     blockIdx.x == 0 && blockIdx.y == 0) { std::printf(__VA_ARGS__); } } while(0)
 
 #define UNROLL
@@ -238,8 +238,10 @@ public:
 public:
     __device__ inline void run_forward()
     {
-        t0printf("Thread (%d, %d, %d, %d) - Starting persistent forward engine on iteration %d.\n",
-            blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y, parameters.first_iteration);
+        t0printf("Thread (%d, %d, %d, %d) - Starting persistent forward engine on "
+            "iteration %d (scratch %p) (acts/deltas %p).\n",
+            blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y, parameters.first_iteration,
+            parameters.activation_scratch, parameters.activations);
 
         if (!is_restarted()) {
             populate_scratch();
@@ -288,9 +290,11 @@ public:
 public:
     __device__ inline void run_back_prop_deltas()
     {
-        t0printf("Thread (%d, %d, %d, %d) - Starting persistent back deltas "
-            "engine on iteration %d.\n",
-            blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y, parameters.first_iteration);
+        t0printf("Thread (%d, %d, %d, %d) - Starting persistent back prop deltas engine on "
+            "iteration %d (scratch %p) (deltas %p) (back prop acts %p).\n",
+            blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y, parameters.first_iteration,
+            parameters.activation_scratch, parameters.activations,
+            parameters.back_prop_activations);
 
         if (!is_restarted()) {
             populate_scratch_back_prop();
@@ -1083,7 +1087,7 @@ private:
     __device__ void load_output_data_from_shared(RegisterState& register_state,
         ThreadTileAccumulators& accumulators, index_t row) {
 
-        index_t thread_offset = threadIdx.y * Config::THREAD_TILE_ROWS;
+        index_t thread_offset = threadIdx.x * Config::THREAD_TILE_ROWS;
 
         index_t shared_output_offset = Config::BLOCK_TILE_COLUMNS;
 

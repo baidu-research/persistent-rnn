@@ -257,7 +257,7 @@ std::string Matrix::toString() const
 
 std::string Matrix::debugString() const
 {
-    return shapeString() + "\n" + matrix::toString(*this, 10) + "\n";
+    return shapeString() + "\n" + matrix::toString(*this, 16) + "\n";
 }
 
 std::string Matrix::shapeString() const
