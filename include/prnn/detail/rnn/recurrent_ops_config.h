@@ -268,6 +268,10 @@ public:
     };
 
     enum {
+        VALUES_PER_OUTPUT_SHARED_LOAD = VALUES_PER_WEIGHT_LOAD
+    };
+
+    enum {
         INPUT_LOAD_GROUP_SIZE  = BLOCK_TILE_COLUMNS / GLOBAL_VALUES_PER_THREAD,
         OUTPUT_LOAD_GROUP_SIZE = BLOCK_TILE_ROWS / GLOBAL_VALUES_PER_THREAD
     };
@@ -368,6 +372,11 @@ public:
     union SharedAccessType {
         typename GetAlignedType<sizeof(RealType)*VALUES_PER_SHARED_LOAD>::type aligned_data;
         RealType data[VALUES_PER_SHARED_LOAD];
+    };
+
+    union OutputSharedAccessType {
+        typename GetAlignedType<sizeof(RealType)*VALUES_PER_SHARED_LOAD>::type aligned_data;
+        RealType data[VALUES_PER_OUTPUT_SHARED_LOAD];
     };
 
     union SharedStoreType {

@@ -31,6 +31,7 @@ void broadcast(Matrix& result, const Matrix& left, const Matrix& right,
 Matrix broadcast(const Matrix& left, const Matrix& right, const Dimension& d,
     const Operation& op);
 
+void zeros(const DynamicView& result);
 void zeros(Matrix& result);
 Matrix zeros(const Dimension& size, const Precision& precision);
 

@@ -1,0 +1,19 @@
+################################################################################
+#    \file   SConscript
+#    \brief  The SCons program build script for persistent rnn tests
+################################################################################
+
+
+Import('env')
+
+prnn_libs = env['PRNN_LIBS']
+
+programs = []
+
+programs.append(env.Program('persistent-rnn-benchmark', \
+    ['benchmark-persistent-kernels.cpp'], LIBS=prnn_libs))
+
+Return('programs')
+
+
+

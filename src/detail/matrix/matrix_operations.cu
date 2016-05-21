@@ -1245,9 +1245,14 @@ Matrix broadcast(const Matrix& left, const Matrix& right, const Dimension& d, co
     return retVal;
 }
 
-void zeros(Matrix& result)
+void zeros(const DynamicView& result)
 {
 	apply(result, result, Fill(0.0));
+}
+
+void zeros(Matrix& result)
+{
+    zeros(DynamicView(result));
 }
 
 Matrix zeros(const Dimension& size, const Precision& precision)

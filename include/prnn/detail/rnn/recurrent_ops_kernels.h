@@ -150,6 +150,8 @@ private:
     typedef typename Config::SharedStoreType  SharedStoreType;
     typedef typename Config::WeightAccessType WeightAccessType;
 
+    typedef typename Config::OutputSharedAccessType OutputSharedAccessType;
+
     enum {
         THREADS_PER_BLOCK = Config::THREADS_PER_BLOCK
     };
@@ -894,7 +896,7 @@ private:
 
         UNROLL
         for (index_t row = 0; row < Config::THREAD_TILE_ROWS;
-            row += Config::VALUES_PER_SHARED_LOAD) {
+            row += Config::VALUES_PER_OUTPUT_SHARED_LOAD) {
 
             set_accumulators_to_zero(accumulators, row);
 
@@ -1079,7 +1081,7 @@ private:
     }
 
     __device__ void set_accumulators_to_zero(ThreadTileAccumulators& accumulators, index_t start) {
-        for (index_t row = 0; row < Config::VALUES_PER_SHARED_LOAD; ++row) {
+        for (index_t row = 0; row < Config::VALUES_PER_OUTPUT_SHARED_LOAD; ++row) {
             accumulators.data[start + row] = 0;
         }
     }
@@ -1097,11 +1099,12 @@ private:
         bool condition = is_leader_thread();
 
         predicated_atomic_shared_load_relaxed(
-            reinterpret_cast<SharedAccessType&>(accumulators.data[row]),
-            reinterpret_cast<SharedAccessType&>(get_shared_data().data[shared_offset]), condition);
+            reinterpret_cast<OutputSharedAccessType&>(accumulators.data[row]),
+            reinterpret_cast<OutputSharedAccessType&>(get_shared_data().data[shared_offset]),
+            condition);
 
         UNROLL
-        for (index_t r = 0; r < Config::VALUES_PER_SHARED_LOAD; ++r) {
+        for (index_t r = 0; r < Config::VALUES_PER_OUTPUT_SHARED_LOAD; ++r) {
 
             t0printf("Thread (%d, %d, %d, %d) - Loading tile outputs "
                 "from shared memory at %d (offset %d) = %f.\n",
@@ -1116,20 +1119,20 @@ private:
         index_t thread_offset = threadIdx.y * Config::THREAD_TILE_ROWS;
         index_t shared_offset = register_state.shared_base + thread_offset + row;
 
-        SharedAccessType temp;
+        OutputSharedAccessType temp;
 
         UNROLL
-        for(index_t i = 0; i < Config::VALUES_PER_SHARED_LOAD; ++i) {
+        for(index_t i = 0; i < Config::VALUES_PER_OUTPUT_SHARED_LOAD; ++i) {
             reinterpret_cast<RealType*>(&temp)[i] = 0.0;
         }
 
         bool condition = is_leader_thread();
 
-        predicated_atomic_shared_load_relaxed(temp, reinterpret_cast<SharedAccessType&>(
+        predicated_atomic_shared_load_relaxed(temp, reinterpret_cast<OutputSharedAccessType&>(
             get_shared_data().data[shared_offset]), condition);
 
         UNROLL
-        for(index_t i = 0; i < Config::VALUES_PER_SHARED_LOAD; ++i) {
+        for(index_t i = 0; i < Config::VALUES_PER_OUTPUT_SHARED_LOAD; ++i) {
 
             auto value = reinterpret_cast<RealType*>(&temp)[i];
 

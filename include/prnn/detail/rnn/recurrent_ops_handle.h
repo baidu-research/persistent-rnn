@@ -54,7 +54,8 @@ public:
         const RecurrentActivationFunction& activationFunction,
         RecurrentLayerDirection direction,
         bool allowPersistentKernels = true,
-        double skipConnectionScale = 0.0) :
+        double skipConnectionScale = 0.0,
+        void* stream = nullptr) :
 
         layerSize(layerSize),
         miniBatchSize(miniBatchSize),
@@ -63,7 +64,7 @@ public:
         skipConnectionScale(skipConnectionScale),
         activationFunction(activationFunction),
         direction(direction),
-        stream(0)
+        stream(stream)
     {}
 
 public:

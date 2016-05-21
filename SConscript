@@ -56,6 +56,7 @@ env['PRNN_LIBS'] = prnn_libs
 programs = []
 
 programs.extend(SConscript('test/SConscript', exports='env'))
+programs.extend(SConscript('benchmark/SConscript', exports='env'))
 
 for program in programs:
     env.Depends(program, libprnn)

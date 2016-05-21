@@ -182,8 +182,8 @@ public:
     typedef TileConfig<60, 2720, 2720, 352, 352, 22, 22, direction> TileSize;
 };
 
-template<RecurrentLayerDirection direction>
-class TileSelector<direction, float16, 24, 5>
+template<RecurrentLayerDirection direction, typename T>
+class TileSelector<direction, T, 24, 5>
 {
 public:
     typedef TileConfig<24, 1088, 1088, 224, 224, 14, 14, direction> TileSize;
@@ -384,7 +384,7 @@ void forwardPropRecurrent(
     const matrix::ConstDynamicView& weights,
     const matrix::DynamicView& scratch, const RecurrentOpsHandle& handle)
 {
-    //if(!parallel::isCudaEnabled())
+    if(!parallel::isCudaEnabled())
     {
         detail::genericForwardPropRecurrent(activations, weights, handle);
         return;
@@ -392,6 +392,8 @@ void forwardPropRecurrent(
 
     assert(activations.precision() == weights.precision());
     assert(activations.precision() == scratch.precision());
+
+    zeros(scratch);
 
     detail::forwardPropRecurrentOverActivationFunctions(activations, weights, scratch, handle);
 }
@@ -657,6 +659,8 @@ void backPropDeltasRecurrent(const matrix::DynamicView& deltas,
         return;
     }
 
+    zeros(scratch);
+
     detail::backPropDeltasRecurrentOverActivationFunctions(deltas, weights, activations,
         scratch, handle);
 }
@@ -690,6 +694,40 @@ void backPropGradientsRecurrent(const matrix::DynamicView& dWeights,
          reshape(slicedActivations,
                 {layerSize, miniBatchSize * (timesteps - 1)}), true);
 
+}
+
+static matrix::Dimension extendDimensions(const matrix::Dimension& dimensions,
+    const matrix::Precision& precision)
+{
+    auto newDimensions = dimensions;
+
+    newDimensions[0] = prnn::rnn::getMaximumSizeRNNForThisGPU(precision);
+    newDimensions[2] += 1;
+
+    return newDimensions;
+}
+
+matrix::Matrix getForwardPropScratch(const RecurrentOpsHandle& handle,
+    const matrix::Precision& precision)
+{
+    matrix::Dimension dimension(handle.layerSize, handle.miniBatchSize, handle.timesteps);
+
+    auto scratchDimension = extendDimensions(dimension, precision);
+
+    return matrix::Matrix(scratchDimension, precision);
+}
+
+
+matrix::Matrix getBackPropDeltasScratch(const RecurrentOpsHandle& handle,
+    const matrix::Precision& precision)
+{
+    return getForwardPropScratch(handle, precision);
+}
+
+matrix::Matrix getBackPropGradientsScratch(const RecurrentOpsHandle& handle,
+    const matrix::Precision& precision)
+{
+    return matrix::Matrix();
 }
 
 }

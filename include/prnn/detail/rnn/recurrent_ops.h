@@ -9,11 +9,11 @@ namespace prnn { class RecurrentOpsHandle; }
 namespace prnn { namespace matrix { class DynamicView;      } }
 namespace prnn { namespace matrix { class ConstDynamicView; } }
 namespace prnn { namespace matrix { class Precision;        } }
+namespace prnn { namespace matrix { class Matrix;           } }
 
 
 namespace prnn
 {
-
 namespace rnn
 {
 
@@ -33,11 +33,15 @@ void backPropGradientsRecurrent(const matrix::DynamicView& dWeights,
     const matrix::ConstDynamicView& deltas,
     const matrix::DynamicView& scratch, const RecurrentOpsHandle& handle);
 
-}
+matrix::Matrix getForwardPropScratch(const RecurrentOpsHandle& handle,
+    const matrix::Precision& precision);
+matrix::Matrix getBackPropDeltasScratch(const RecurrentOpsHandle& handle,
+    const matrix::Precision& precision);
+matrix::Matrix getBackPropGradientsScratch(const RecurrentOpsHandle& handle,
+    const matrix::Precision& precision);
+
 
 }
-
-
-
+}
 
 
