@@ -24,7 +24,7 @@
 
 #define t0printf(...) do { } while(0)
 
-#define UNROLL #pragma unroll
+#define UNROLL _Pragma("unroll")
 
 #endif
 

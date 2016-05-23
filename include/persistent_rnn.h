@@ -13,8 +13,8 @@
 
 #define PRNN_VERSION    (PRNN_MAJOR * 1000 + PRNN_MINOR * 100 + PRNN_PATCHLEVEL)
 
-#include "driver_types.h"
-#include <cuda_runtime.h>
+// Standard Library Includes
+#include <stddef.h>
 
 #if defined (__cplusplus)
 extern "C" {
@@ -47,8 +47,8 @@ const char* prnnGetErrorString(prnnStatus_t status);
 
 prnnStatus_t prnnCreate    (prnnHandle_t* handle);
 prnnStatus_t prnnDestroy   (prnnHandle_t handle);
-prnnStatus_t prnnSetStream (prnnHandle_t handle, cudaStream_t streamId);
-prnnStatus_t prnnGetStream (prnnHandle_t handle, cudaStream_t* streamId);
+prnnStatus_t prnnSetStream (prnnHandle_t handle, void* streamId);
+prnnStatus_t prnnGetStream (prnnHandle_t handle, void** streamId);
 
 /* Data structures to represent input data and the Neural Network Layer */
 typedef struct prnnTensorStruct* prnnTensorDescriptor_t;

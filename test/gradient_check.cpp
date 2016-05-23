@@ -231,7 +231,7 @@ void TestSimpleRecurrentOpsGradientCheck(prnn::RecurrentLayerDirection direction
 
     std::vector<size_t> sample_positions = {15};
 
-    for (int sample = 0; sample != samples; ++sample) {
+    for (size_t sample = 0; sample != samples; ++sample) {
         sample_positions.push_back(random_engine() % gradient_count);
     }
 

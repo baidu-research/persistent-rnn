@@ -16,6 +16,7 @@
 
 // Standard Library Includes
 #include <new>
+#include <cstddef>
 
 size_t prnnGetVersion(void)
 {
@@ -78,7 +79,7 @@ const char* prnnGetErrorString(prnnStatus_t status)
 struct prnnContext
 {
 public:
-    cudaStream_t stream;
+    void* stream;
 };
 
 prnnStatus_t prnnCreate(prnnHandle_t* handle)
@@ -102,14 +103,14 @@ prnnStatus_t prnnDestroy(prnnHandle_t handle)
     return PRNN_STATUS_SUCCESS;
 }
 
-prnnStatus_t prnnSetStream(prnnHandle_t handle, cudaStream_t streamId)
+prnnStatus_t prnnSetStream(prnnHandle_t handle, void* streamId)
 {
     handle->stream = streamId;
 
     return PRNN_STATUS_SUCCESS;
 }
 
-prnnStatus_t prnnGetStream(prnnHandle_t handle, cudaStream_t* streamId)
+prnnStatus_t prnnGetStream(prnnHandle_t handle, void** streamId)
 {
     *streamId = handle->stream;
 

@@ -10,6 +10,7 @@
 #include <string>
 #include <unordered_set>
 #include <iostream>
+#include <memory>
 
 namespace prnn
 {

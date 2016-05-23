@@ -141,6 +141,7 @@ def generate(env):
   """
 
   if not cuda_exists(env):
+    print('Failed to build NVCC tool')
     generate_dummy(env)
     return
 
@@ -150,6 +151,8 @@ def generate(env):
                                       suffix = '.ptx',
                                       src_suffix = CUDASuffixes)
   env['BUILDERS']['PTXFile'] = ptx_builder
+
+  print('Building NVCC tool')
 
   # create builders that make static & shared objects from .cu files
   static_obj, shared_obj = SCons.Tool.createObjBuilders(env)

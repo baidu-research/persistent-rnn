@@ -2,7 +2,7 @@
 #pragma once
 
 // Persistent RNN Includes
-#include <prnn/detail/matrix/Dimension.h>
+#include <prnn/detail/matrix/dimension.h>
 
 // Standard Library Includes
 #include <sstream>

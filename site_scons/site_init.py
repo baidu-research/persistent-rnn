@@ -223,7 +223,12 @@ def BuildEnvironment():
         '"install")', 0))
 
     # add a variable to handle cuda install path
-    vars.Add(PathVariable('cuda_path', 'Cuda toolkit install path', '/usr/local/cuda',
+    cuda_path = "/usr/local/cuda"
+
+    if 'CUDA_PATH' in os.environ:
+        cuda_path = os.environ['CUDA_PATH']
+
+    vars.Add(PathVariable('cuda_path', 'Cuda toolkit install path', cuda_path,
         PathVariable.PathAccept))
 
     # add a variable to handle cuda architecture

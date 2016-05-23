@@ -201,8 +201,6 @@ void forwardPropRecurrent(const matrix::DynamicView& activations,
           RealType* activationData = activations.data<RealType>();
           RealType* scratchData    = scratch.data<RealType>();
 
-    size_t timesteps = activations.size()[2];
-
     int major = 0;
     int minor = 0;
     int smCount = 0;
@@ -462,8 +460,6 @@ void backPropDeltasRecurrent(const matrix::DynamicView& deltas,
           RealType* activationData = activations.data<RealType>();
           RealType* deltaData      = deltas.data<RealType>();
           RealType* scratchData    = scratch.data<RealType>();
-
-    size_t timesteps = activations.size()[2];
 
     int major = 0;
     int minor = 0;

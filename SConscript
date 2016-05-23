@@ -36,11 +36,10 @@ for dir in source_directories:
         sources.extend(env.Glob(regexp))
 
 for dir in cuda_source_directories:
-    for ext in extensions:
-        regexp = os.path.join(dir, '*.cu')
-        cuda_sources = env.Glob(regexp)
-        for cuda_source in cuda_sources:
-            sources.append(env.CUDASharedObject(cuda_source))
+    regexp = os.path.join(dir, '*.cu')
+    cuda_sources = env.Glob(regexp)
+    for cuda_source in cuda_sources:
+        sources.append(env.CUDASharedObject(cuda_source))
 
 # create the library
 libprnn = env.SharedLibrary('prnn', sources, LIBS=env['EXTRA_LIBS'])
