@@ -1,6 +1,4 @@
-# persistent-rnn
-
-## Persistent RNNs
+# Persistent Recurrent Neural Network Library
 
 For a GPU, the largest source of on-chip memory is distributed among the individual register files
 of thousands of threads. For example, the NVIDIA TitanX GPU has 6.3 MB of register file memory,
