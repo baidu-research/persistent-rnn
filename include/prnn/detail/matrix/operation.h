@@ -364,7 +364,7 @@ public:
     template<typename T>
     CUDA_DECORATOR T operator()(const T& l) const
     {
-        return (l > T(20.0)) ? T(20.0) : ((l < T(0.0)) ? T(0.0) : l);
+        return parallel::min(parallel::max(l, T(0.0)), T(20.0));
     }
 
 };

@@ -110,7 +110,24 @@ class AtomicReducer<float>
 {
 public:
     __device__ static void increment(float& address, const float& increment) {
-        asm("red.global.add.f32 [%0], %1;" :: "l"(&address), "f"(increment) : "memory");
+        asm("{\n"
+            //"    .reg .u64 address;"
+            //"    cvta.global.u64 address, %0;\n"
+            "    red.global.add.f32 [%0], %1;\n"
+            "}" :: "l"(&address), "f"(increment) : "memory");
+    }
+};
+
+template <>
+class AtomicReducer<int32_t>
+{
+public:
+    __device__ static void increment(int32_t& address, const int32_t& increment) {
+        asm("{\n"
+            //"    .reg .u64 address;"
+            //"    cvta.global.u64 address, %0;\n"
+            "    red.global.add.s32 [%0], %1;\n"
+            "}" :: "l"(&address), "r"(increment) : "memory");
     }
 };
 

@@ -25,6 +25,41 @@ namespace rnn
 namespace detail
 {
 
+template<RecurrentLayerDirection direction, typename T, size_t sms, size_t smMajor>
+class TileSelector
+{
+public:
+    typedef TileConfig<1, 96, 96, 96, 96, 12, 12, direction> TileSize;
+
+};
+
+#if __CUDA_ARCH__ >= 600 && __CUDA_ARCH__ <= 700
+
+template<RecurrentLayerDirection direction, typename T>
+class TileSelector<direction, T, 60, 6>
+{
+public:
+    typedef TileConfig<60, 1820, 1820, 96, 96, 12, 12, direction> TileSize;
+};
+
+template<RecurrentLayerDirection direction>
+class TileSelector<direction, float16, 60, 6>
+{
+public:
+    typedef TileConfig<60, 2720, 2720, 352, 352, 22, 22, direction> TileSize;
+};
+
+#endif
+
+#if __CUDA_ARCH__ >= 500 && __CUDA_ARCH__ <= 600
+template<RecurrentLayerDirection direction, typename T>
+class TileSelector<direction, T, 24, 5>
+{
+public:
+    typedef TileConfig<24, 1152, 1152, 96, 96, 12, 12, direction> TileSize;
+};
+#endif
+
 class TileSizeSelector
 {
 public:
@@ -45,20 +80,24 @@ public:
         {
             if(precision == matrix::HalfPrecision())
             {
-                return 2720;
+                return TileSelector<prnn::RECURRENT_FORWARD,
+                    float16, 60, 6>::TileSize::GRID_TILE_ROWS;
             }
             else
             {
-                return 1820;
+                return TileSelector<prnn::RECURRENT_FORWARD,
+                    float, 60, 6>::TileSize::GRID_TILE_ROWS;
             }
         }
         else if(streamingMultiprocessorVersionMajor == 5 && streamingMultiprocessorCount >= 24)
         {
-            return 1088;
+            return TileSelector<prnn::RECURRENT_FORWARD,
+                float, 24, 5>::TileSize::GRID_TILE_ROWS;
         }
         else
         {
-            return 224;
+            return TileSelector<prnn::RECURRENT_FORWARD,
+                float, 1, 0>::TileSize::GRID_TILE_ROWS;
         }
     }
 
@@ -159,35 +198,6 @@ void dispatchForwardPropRecurrent(typename ArchitectureConfig::RealType* activat
     }
 
 }
-
-template<RecurrentLayerDirection direction, typename T, size_t sms, size_t smMajor>
-class TileSelector
-{
-public:
-    typedef TileConfig<sms, 224, 224, 224, 224, 14, 14, direction> TileSize;
-
-};
-
-template<RecurrentLayerDirection direction, typename T>
-class TileSelector<direction, T, 60, 6>
-{
-public:
-    typedef TileConfig<60, 1820, 1820, 96, 96, 12, 12, direction> TileSize;
-};
-
-template<RecurrentLayerDirection direction>
-class TileSelector<direction, float16, 60, 6>
-{
-public:
-    typedef TileConfig<60, 2720, 2720, 352, 352, 22, 22, direction> TileSize;
-};
-
-template<RecurrentLayerDirection direction, typename T>
-class TileSelector<direction, T, 24, 5>
-{
-public:
-    typedef TileConfig<24, 1088, 1088, 224, 224, 14, 14, direction> TileSize;
-};
 
 template <typename ActivationFunction, typename T, RecurrentLayerDirection direction>
 void forwardPropRecurrent(const matrix::DynamicView& activations,
@@ -382,7 +392,7 @@ void forwardPropRecurrent(
     const matrix::ConstDynamicView& weights,
     const matrix::DynamicView& scratch, const RecurrentOpsHandle& handle)
 {
-    if(!parallel::isCudaEnabled())
+    if(!parallel::isCudaEnabled() || !handle.allowPersistentKernels)
     {
         detail::genericForwardPropRecurrent(activations, weights, handle);
         return;
@@ -649,7 +659,7 @@ void backPropDeltasRecurrent(const matrix::DynamicView& deltas,
     const matrix::ConstDynamicView& weights, const matrix::DynamicView& activations,
     const matrix::DynamicView& scratch, const RecurrentOpsHandle& handle)
 {
-    if(!parallel::isCudaEnabled())
+    if(!parallel::isCudaEnabled() || !handle.allowPersistentKernels)
     {
         detail::genericBackPropDeltasRecurrent(deltas, weights, activations, handle);
         return;

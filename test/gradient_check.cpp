@@ -21,7 +21,7 @@
 
 void TestSimpleRecurrentOps()
 {
-    auto precision = prnn::matrix::DoublePrecision();
+    auto precision = prnn::matrix::SinglePrecision();
 
     prnn::matrix::srand(377);
 
@@ -146,12 +146,12 @@ void TestSimpleRecurrentOpsGradientCheck(prnn::RecurrentLayerDirection direction
     prnn::matrix::srand(377);
 
     size_t layer_size = prnn::rnn::getMaximumSizeRNNForThisGPU(precision);
-    size_t timesteps  = 5;
-    size_t mini_batch = 4;
+    size_t timesteps  = 6;
+    size_t mini_batch = 3;
     size_t samples    = 20;
 
     size_t window_rows    = layer_size;
-    size_t window_columns = 1;
+    size_t window_columns = window_rows;
     size_t window_outputs = window_rows;
 
     samples = std::min(window_rows * window_columns, samples);
@@ -229,7 +229,7 @@ void TestSimpleRecurrentOpsGradientCheck(prnn::RecurrentLayerDirection direction
 
     size_t gradient_count = window_rows * window_columns;
 
-    std::vector<size_t> sample_positions = {15};
+    std::vector<size_t> sample_positions = {0};
 
     for (size_t sample = 0; sample != samples; ++sample) {
         sample_positions.push_back(random_engine() % gradient_count);
@@ -352,7 +352,7 @@ void RunTest(const std::string& testName, void (*function)(void) )
 
 int main(int argc, char** argv)
 {
-    //prnn::util::enable_all_logs();
+    prnn::util::enable_all_logs();
 
     RunTest("Simple Recurrent Ops Test",            TestSimpleRecurrentOps              );
     RunTest("Recurrent Forward Ops Gradient Check", TestRecurrentOpsGradientCheck       );
