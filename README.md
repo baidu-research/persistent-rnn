@@ -5,6 +5,8 @@ of thousands of threads. For example, the NVIDIA TitanX GPU has 6.3 MB of regist
 which is enough to store a recurrent layer with approximately 1200 activations. Persistent kernels
 exploit this register file memory to cache recurrent weights and reuse them over multiple timesteps.
 
+Avoiding reloading layer weights multiple times makes persistent kernels very efficient at low batch sizes.
+
 ## Limitations in the current release
 
  * No support for GRU or LSTM layer types
