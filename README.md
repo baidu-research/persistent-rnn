@@ -10,6 +10,7 @@ exploit this register file memory to cache recurrent weights and reuse them over
 ## Limitations in the current release
 
  * No support for GRU or LSTM layer types
+  * These may be added in the future.  We would welcome pull requests that add support. 
  * The maximum layer size is determined by the selected GPU
   * 1088 for TitanX/M40
   * 1460 for Geforce 1080
