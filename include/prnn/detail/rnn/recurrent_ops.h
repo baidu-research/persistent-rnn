@@ -25,13 +25,13 @@ void forwardPropRecurrent(
     const matrix::DynamicView& scratch, const RecurrentOpsHandle& handle);
 
 void backPropDeltasRecurrent(const matrix::DynamicView& deltas,
-    const matrix::ConstDynamicView& weights, const matrix::DynamicView& activations,
+    const matrix::ConstDynamicView& weights, const matrix::ConstDynamicView& activations,
     const matrix::DynamicView& scratch, const RecurrentOpsHandle& handle);
 
 void backPropGradientsRecurrent(const matrix::DynamicView& dWeights,
     const matrix::ConstDynamicView& activations,
     const matrix::ConstDynamicView& deltas,
-    const matrix::DynamicView& scratch, const RecurrentOpsHandle& handle);
+    const matrix::ConstDynamicView& scratch, const RecurrentOpsHandle& handle);
 
 matrix::Matrix getForwardPropScratch(const RecurrentOpsHandle& handle,
     const matrix::Precision& precision);

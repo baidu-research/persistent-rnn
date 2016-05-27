@@ -427,6 +427,20 @@ static bool isForwardPropSupported(const void* x, const void* hx,
     return true;
 }
 
+static bool isBackPropDeltasSupported(const void* hx,
+    const void* cx, const prnnFilterDescriptor_t wDesc,
+    const void* y, const void* dy, const void* dhy, const void* dcy)
+{
+    return true;
+}
+
+static bool isBackPropGradientsSupported(const void* x, const void* hx,
+    const prnnFilterDescriptor_t dwDesc,
+    const void* y)
+{
+    return true;
+}
+
 static prnn::matrix::DynamicView constructView(const prnnTensorDescriptor_t descriptor,
     void* data)
 {
@@ -474,6 +488,12 @@ static prnn::matrix::DynamicView getScratchView(void* workspace, size_t size,
     const prnn::matrix::Precision& precision)
 {
     return prnn::matrix::DynamicView(workspace, {size}, {1}, precision);
+}
+
+static prnn::matrix::ConstDynamicView getScratchView(const void* workspace, size_t size,
+    const prnn::matrix::Precision& precision)
+{
+    return prnn::matrix::ConstDynamicView(workspace, {size}, {1}, precision);
 }
 
 prnnStatus_t prnnRNNForward(prnnHandle_t handle,
@@ -551,7 +571,32 @@ prnnStatus_t prnnRNNBackwardData(prnnHandle_t handle,
                                  const void* reserveSpace,
                                  size_t reserveSpaceSizeInBytes)
 {
-    return PRNN_STATUS_NOT_SUPPORTED;
+    if (!isSupported(rnnDesc))
+    {
+        return PRNN_STATUS_NOT_SUPPORTED;
+    }
+
+    if (!isBackPropDeltasSupported(hx, cx, wDesc, y, dy, dhy, dcy))
+    {
+        return PRNN_STATUS_NOT_SUPPORTED;
+    }
+
+    auto activationsView = constructView(*yDesc,  y);
+    auto deltasView      = constructView(*dxDesc, dx);
+    auto weightsView     = constructView( wDesc,  w);
+
+    size_t miniBatchSize = activationsView.size()[1];
+    size_t timesteps     = activationsView.size()[2];
+
+    auto opsHandle = constructHandle(handle, rnnDesc, miniBatchSize, timesteps);
+
+    auto scratchView = getScratchView(workspace, workSpaceSizeInBytes,
+        activationsView.precision());
+
+    prnn::rnn::backPropDeltasRecurrent(deltasView, weightsView, activationsView,
+        scratchView, opsHandle);
+
+    return PRNN_STATUS_SUCCESS;
 }
 
 prnnStatus_t prnnRNNBackwardWeights(prnnHandle_t handle,
@@ -569,7 +614,32 @@ prnnStatus_t prnnRNNBackwardWeights(prnnHandle_t handle,
                                     const void* reserveSpace,
                                     size_t reserveSpaceSizeInBytes)
 {
-    return PRNN_STATUS_NOT_SUPPORTED;
+    if (!isSupported(rnnDesc))
+    {
+        return PRNN_STATUS_NOT_SUPPORTED;
+    }
+
+    if (!isBackPropGradientsSupported(x, hx, dwDesc, y))
+    {
+        return PRNN_STATUS_NOT_SUPPORTED;
+    }
+
+    auto activationsView = constructView(*yDesc,  y);
+    auto deltasView      = constructView(*xDesc,  x);
+    auto weightsView     = constructView(dwDesc, dw);
+
+    size_t miniBatchSize = activationsView.size()[1];
+    size_t timesteps     = activationsView.size()[2];
+
+    auto opsHandle = constructHandle(handle, rnnDesc, miniBatchSize, timesteps);
+
+    auto scratchView = getScratchView(workspace, workSpaceSizeInBytes,
+        activationsView.precision());
+
+    prnn::rnn::backPropGradientsRecurrent(weightsView, activationsView, deltasView,
+        scratchView, opsHandle);
+
+    return PRNN_STATUS_SUCCESS;
 }
 
 

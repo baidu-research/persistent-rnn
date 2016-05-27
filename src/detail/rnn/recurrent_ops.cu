@@ -462,14 +462,14 @@ void dispatchBackPropDeltasRecurrent(
 
 template <typename ActivationFunction, typename T, RecurrentLayerDirection direction>
 void backPropDeltasRecurrent(const matrix::DynamicView& deltas,
-    const matrix::ConstDynamicView& weights, const matrix::DynamicView& activations,
+    const matrix::ConstDynamicView& weights, const matrix::ConstDynamicView& activations,
     const matrix::DynamicView& scratch, const RecurrentOpsHandle& handle,
     const std::tuple<T>& precision)
 {
     typedef typename T::type RealType;
 
     const RealType* weightsData    = weights.data<RealType>();
-          RealType* activationData = activations.data<RealType>();
+          RealType* activationData = const_cast<RealType*>(activations.data<RealType>());
           RealType* deltaData      = deltas.data<RealType>();
           RealType* scratchData    = scratch.data<RealType>();
 
@@ -513,7 +513,7 @@ void backPropDeltasRecurrent(const matrix::DynamicView& deltas,
 
 template <typename ActivationFunction, typename T>
 void backPropDeltasRecurrentOverPrecisions(const matrix::DynamicView& deltas,
-    const matrix::ConstDynamicView& weights, const matrix::DynamicView& activations,
+    const matrix::ConstDynamicView& weights, const matrix::ConstDynamicView& activations,
     const matrix::DynamicView& scratch, const RecurrentOpsHandle& handle,
     const std::tuple<T>& precision)
 {
@@ -535,7 +535,7 @@ void backPropDeltasRecurrentOverPrecisions(const matrix::DynamicView& deltas,
 
 template<typename ActivationFunction, typename Precisions>
 void backPropDeltasRecurrentOverPrecisions(const matrix::DynamicView& deltas,
-    const matrix::ConstDynamicView& weights, const matrix::DynamicView& activations,
+    const matrix::ConstDynamicView& weights, const matrix::ConstDynamicView& activations,
     const matrix::DynamicView& scratch, const RecurrentOpsHandle& handle,
     const Precisions& precisions)
 {
@@ -557,7 +557,7 @@ void backPropDeltasRecurrentOverPrecisions(const matrix::DynamicView& deltas,
 
 template <typename ActivationFunction>
 void backPropDeltasRecurrentOverPrecisions(const matrix::DynamicView& deltas,
-    const matrix::ConstDynamicView& weights, const matrix::DynamicView& activations,
+    const matrix::ConstDynamicView& weights, const matrix::ConstDynamicView& activations,
     const matrix::DynamicView& scratch, const RecurrentOpsHandle& handle)
 {
     backPropDeltasRecurrentOverPrecisions<ActivationFunction>(deltas, weights, activations,
@@ -566,7 +566,7 @@ void backPropDeltasRecurrentOverPrecisions(const matrix::DynamicView& deltas,
 
 template<typename ActivationFunction>
 void backPropDeltasRecurrentOverActivationFunctions(const matrix::DynamicView& deltas,
-    const matrix::ConstDynamicView& weights, const matrix::DynamicView& activations,
+    const matrix::ConstDynamicView& weights, const matrix::ConstDynamicView& activations,
     const matrix::DynamicView& scratch, const RecurrentOpsHandle& handle,
     const std::tuple<ActivationFunction>& activationFunction)
 {
@@ -578,7 +578,7 @@ void backPropDeltasRecurrentOverActivationFunctions(const matrix::DynamicView& d
 
 template<typename Functions>
 void backPropDeltasRecurrentOverActivationFunctions(const matrix::DynamicView& deltas,
-    const matrix::ConstDynamicView& weights, const matrix::DynamicView& activations,
+    const matrix::ConstDynamicView& weights, const matrix::ConstDynamicView& activations,
     const matrix::DynamicView& scratch, const RecurrentOpsHandle& handle,
     const Functions& functions)
 {
@@ -599,7 +599,7 @@ void backPropDeltasRecurrentOverActivationFunctions(const matrix::DynamicView& d
 }
 
 void backPropDeltasRecurrentOverActivationFunctions(const matrix::DynamicView& deltas,
-    const matrix::ConstDynamicView& weights, const matrix::DynamicView& activations,
+    const matrix::ConstDynamicView& weights, const matrix::ConstDynamicView& activations,
     const matrix::DynamicView& scratch, const RecurrentOpsHandle& handle)
 {
     backPropDeltasRecurrentOverActivationFunctions(deltas, weights, activations, scratch,
@@ -607,7 +607,7 @@ void backPropDeltasRecurrentOverActivationFunctions(const matrix::DynamicView& d
 }
 
 void genericBackPropDeltasRecurrent(const matrix::DynamicView& deltas,
-    const matrix::ConstDynamicView& weights, const matrix::DynamicView& activations,
+    const matrix::ConstDynamicView& weights, const matrix::ConstDynamicView& activations,
     const RecurrentOpsHandle& handle)
 {
     bool reversed = (handle.direction == prnn::RECURRENT_REVERSE);
@@ -658,7 +658,7 @@ void genericBackPropDeltasRecurrent(const matrix::DynamicView& deltas,
 }
 
 void backPropDeltasRecurrent(const matrix::DynamicView& deltas,
-    const matrix::ConstDynamicView& weights, const matrix::DynamicView& activations,
+    const matrix::ConstDynamicView& weights, const matrix::ConstDynamicView& activations,
     const matrix::DynamicView& scratch, const RecurrentOpsHandle& handle)
 {
     if(!parallel::isCudaEnabled() || !handle.allowPersistentKernels)
@@ -676,7 +676,7 @@ void backPropDeltasRecurrent(const matrix::DynamicView& deltas,
 void backPropGradientsRecurrent(const matrix::DynamicView& dWeights,
     const matrix::ConstDynamicView& outputActivations,
     const matrix::ConstDynamicView& deltas,
-    const matrix::DynamicView& scratch, const RecurrentOpsHandle& handle)
+    const matrix::ConstDynamicView& scratch, const RecurrentOpsHandle& handle)
 {
     bool reversed = (handle.direction == prnn::RECURRENT_REVERSE);
 
