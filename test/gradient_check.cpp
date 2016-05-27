@@ -145,7 +145,7 @@ void TestSimpleRecurrentOpsGradientCheck(prnn::RecurrentLayerDirection direction
 
     prnn::matrix::srand(377);
 
-    size_t layer_size = prnn::rnn::getMaximumSizeRNNForThisGPU(precision);
+    size_t layer_size = 192;//prnn::rnn::getMaximumSizeRNNForThisGPU(precision);
     size_t timesteps  = 6;
     size_t mini_batch = 3;
     size_t samples    = 20;
@@ -354,7 +354,7 @@ int main(int argc, char** argv)
 {
     prnn::util::enable_all_logs();
 
-    RunTest("Simple Recurrent Ops Test",            TestSimpleRecurrentOps              );
+ //   RunTest("Simple Recurrent Ops Test",            TestSimpleRecurrentOps              );
     RunTest("Recurrent Forward Ops Gradient Check", TestRecurrentOpsGradientCheck       );
     //RunTest("Recurrent Reverse Ops Gradient Check", TestReverseRecurrentOpsGradientCheck);
 

@@ -33,8 +33,6 @@ public:
 
 };
 
-#if __CUDA_ARCH__ >= 600 && __CUDA_ARCH__ <= 700
-
 template<RecurrentLayerDirection direction, typename T>
 class TileSelector<direction, T, 60, 6>
 {
@@ -49,16 +47,12 @@ public:
     typedef TileConfig<60, 2720, 2720, 352, 352, 22, 22, direction> TileSize;
 };
 
-#endif
-
-#if __CUDA_ARCH__ >= 500 && __CUDA_ARCH__ <= 600
 template<RecurrentLayerDirection direction, typename T>
 class TileSelector<direction, T, 24, 5>
 {
 public:
     typedef TileConfig<24, 1152, 1152, 96, 96, 12, 12, direction> TileSize;
 };
-#endif
 
 class TileSizeSelector
 {
@@ -76,29 +70,37 @@ public:
 public:
     size_t getMaximumSize() const
     {
+        size_t maxSize = 0;
+
         if(streamingMultiprocessorVersionMajor == 6 && streamingMultiprocessorCount >= 60)
         {
             if(precision == matrix::HalfPrecision())
             {
-                return TileSelector<prnn::RECURRENT_FORWARD,
+                maxSize = TileSelector<prnn::RECURRENT_FORWARD,
                     float16, 60, 6>::TileSize::GRID_TILE_ROWS;
             }
             else
             {
-                return TileSelector<prnn::RECURRENT_FORWARD,
+                maxSize = TileSelector<prnn::RECURRENT_FORWARD,
                     float, 60, 6>::TileSize::GRID_TILE_ROWS;
             }
         }
         else if(streamingMultiprocessorVersionMajor == 5 && streamingMultiprocessorCount >= 24)
         {
-            return TileSelector<prnn::RECURRENT_FORWARD,
+            maxSize = TileSelector<prnn::RECURRENT_FORWARD,
                 float, 24, 5>::TileSize::GRID_TILE_ROWS;
         }
         else
         {
-            return TileSelector<prnn::RECURRENT_FORWARD,
+            maxSize = TileSelector<prnn::RECURRENT_FORWARD,
                 float, 1, 0>::TileSize::GRID_TILE_ROWS;
         }
+
+        util::log("RecurrentOperations") << "major " << streamingMultiprocessorVersionMajor
+            << ", minor " << streamingMultiprocessorVersionMinor << ", sms "
+            << streamingMultiprocessorCount << ", max size is " << maxSize << "\n";
+
+        return maxSize;
     }
 
 public:
