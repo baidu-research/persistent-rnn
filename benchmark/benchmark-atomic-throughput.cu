@@ -11,9 +11,9 @@
 // Standard Library Includes
 #include <iostream>
 
-__global__ void performAtomicsKernel(int* array, size_t size)
+__global__ void performAtomicsKernel(int* array, size_t size, size_t collisions)
 {
-    size_t id = threadIdx.x + blockIdx.x * blockDim.x;
+    size_t id = threadIdx.x + (blockIdx.x / collisions) * blockDim.x;
     size_t gridSize = gridDim.x * blockDim.x;
 
     for(size_t i = id; i < size; i += gridSize)
@@ -22,34 +22,34 @@ __global__ void performAtomicsKernel(int* array, size_t size)
     }
 }
 
-void performAtomics(int* array, size_t size)
+void performAtomics(int* array, size_t size, size_t collisions)
 {
     size_t blocks  = 128;
     size_t threads = 128;
 
-    performAtomicsKernel<<<blocks, threads>>>(array, size);
+    performAtomicsKernel<<<blocks, threads>>>(array, size, collisions);
 }
 
-void benchmarkAtomics(size_t size, size_t iterations)
+void benchmarkAtomics(size_t size, size_t iterations, size_t collisions)
 {
     auto precision = prnn::matrix::SinglePrecision();
 
     auto data = prnn::matrix::zeros({size}, precision);
 
     // warm up
-    performAtomics(reinterpret_cast<int*>(data.data()), size);
-    prnn::parallel::synchronize();
+    performAtomics(reinterpret_cast<int*>(data.data()), size, collisions);
+    cudaDeviceSynchronize();
 
     prnn::util::Timer timer;
 
     timer.start();
 
-    for(size_t i = 0; i < size; ++i)
+    for(size_t i = 0; i < iterations; ++i)
     {
-        performAtomics(reinterpret_cast<int*>(data.data()), size);
+        performAtomics(reinterpret_cast<int*>(data.data()), size, collisions);
     }
 
-    prnn::parallel::synchronize();
+    cudaDeviceSynchronize();
 
     timer.stop();
 
@@ -63,17 +63,17 @@ int main(int argc, char** argv)
 {
     prnn::util::ArgumentParser parser(argc, argv);
 
-    prnn::matrix::Precision precision = prnn::matrix::SinglePrecision();
-
     size_t iterations = 20;
     size_t size       = (1 << 20);
+    size_t collisions = 16*12;
 
     parser.parse("-i", "--iterations", iterations, iterations, "Iterations to run each atomic kernel.");
     parser.parse("-s", "--size",       size,       size,       "The size of the array to operate on.");
+    parser.parse("-c", "--collisions", collisions, collisions, "The number of collisions.");
 
     parser.parse();
 
-    benchmarkAtomics(size, iterations);
+    benchmarkAtomics(size, iterations, collisions);
 
     return 0;
 }
