@@ -213,8 +213,8 @@ void forwardPropRecurrent(const matrix::DynamicView& activations,
           RealType* activationData = activations.data<RealType>();
           RealType* scratchData    = scratch.data<RealType>();
 
-    int major = 0;
-    int minor = 0;
+    int major   = 0;
+    int minor   = 0;
     int smCount = 0;
 
     getGPUMajorAndMinorVersion(major, minor, smCount);
@@ -457,7 +457,6 @@ void dispatchBackPropDeltasRecurrent(
             synchronizer.reset_failed_flag();
         }
     }
-
 }
 
 template <typename ActivationFunction, typename T, RecurrentLayerDirection direction>
@@ -473,8 +472,8 @@ void backPropDeltasRecurrent(const matrix::DynamicView& deltas,
           RealType* deltaData      = deltas.data<RealType>();
           RealType* scratchData    = scratch.data<RealType>();
 
-    int major = 0;
-    int minor = 0;
+    int major   = 0;
+    int minor   = 0;
     int smCount = 0;
 
     getGPUMajorAndMinorVersion(major, minor, smCount);
