@@ -75,6 +75,9 @@ CUDASuffixes = ['.cu', '.cpp']
 # cuda uses the c preprocessor, so we can use the CScanner
 CUDAScanner = SCons.Scanner.C.CScanner()
 
+def get_architecture_major(arch):
+    return arch[3]
+
 def add_common_nvcc_variables(env):
   """
   Add underlying common "NVIDIA CUDA compiler" variables that
@@ -119,6 +122,7 @@ def add_nvcc_flags(env):
     pass
 
   env.AppendUnique(NVCCFLAGS = '-std=c++11')
+  env.AppendUnique(NVCCFLAGS = '-D CUDA_ARCH_MAJOR=' + get_architecture_major(arch))
   env.AppendUnique(NVCCFLAGS = '-Xcompiler=-Wno-unused-function')
   env.AppendUnique(NVCCFLAGS = '-Xcompiler=-Wno-unused-private-field')
   #env.AppendUnique(NVCCFLAGS = '-Xcompiler=-Wno-unused-local-typedef')
