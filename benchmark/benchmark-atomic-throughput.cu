@@ -11,7 +11,9 @@
 // Standard Library Includes
 #include <iostream>
 
-__global__ void performAtomicsKernel(int* array, size_t size, size_t collisions)
+typedef float Type;
+
+__global__ void performAtomicsKernel(Type* array, size_t size, size_t collisions)
 {
     size_t id = threadIdx.x + (blockIdx.x / collisions) * blockDim.x;
     size_t gridSize = gridDim.x * blockDim.x;
@@ -22,7 +24,7 @@ __global__ void performAtomicsKernel(int* array, size_t size, size_t collisions)
     }
 }
 
-void performAtomics(int* array, size_t size, size_t collisions)
+void performAtomics(Type* array, size_t size, size_t collisions)
 {
     size_t blocks  = 128;
     size_t threads = 128;
@@ -37,7 +39,7 @@ void benchmarkAtomics(size_t size, size_t iterations, size_t collisions)
     auto data = prnn::matrix::zeros({size}, precision);
 
     // warm up
-    performAtomics(reinterpret_cast<int*>(data.data()), size, collisions);
+    performAtomics(reinterpret_cast<Type*>(data.data()), size, collisions);
     cudaDeviceSynchronize();
 
     prnn::util::Timer timer;
@@ -46,7 +48,7 @@ void benchmarkAtomics(size_t size, size_t iterations, size_t collisions)
 
     for(size_t i = 0; i < iterations; ++i)
     {
-        performAtomics(reinterpret_cast<int*>(data.data()), size, collisions);
+        performAtomics(reinterpret_cast<Type*>(data.data()), size, collisions);
     }
 
     cudaDeviceSynchronize();
@@ -73,7 +75,7 @@ int main(int argc, char** argv)
 
     parser.parse();
 
-    benchmarkAtomics(size, iterations, collisions);
+    benchmarkAtomics(size * collisions, iterations, collisions);
 
     return 0;
 }
