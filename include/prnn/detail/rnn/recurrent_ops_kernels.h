@@ -286,8 +286,8 @@ public:
         if (!register_state.barrier_success) {
             t0printf("Thread (%d, %d, %d, %d) - Barrier failed, bailing out.\n",
                 blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y);
-            synchronizer.set_concurrent_execution_failed();
-            synchronizer.set_phase(iteration);
+            //synchronizer.set_concurrent_execution_failed();
+            //synchronizer.set_phase(iteration);
         }
     }
 
@@ -547,7 +547,20 @@ private:
             offset < expanded_layer_size * parameters.mini_batch_size;
             offset += size) {
 
-            auto value = parameters.activations[expand_id(offset)];
+            index_t position_in_layer = offset % expanded_layer_size;
+            index_t layer_id          = offset / expanded_layer_size;
+
+            index_t local_index   = layer_id * parameters.layer_size + position_in_layer;
+            index_t scratch_index = layer_id * Config::EXPANDED_GRID_TILE_COLUMNS +
+                position_in_layer;
+
+            bool is_in_range = position_in_layer < parameters.layer_size;
+
+            RealType value = 0.0;
+
+            if (is_in_range) {
+                value = parameters.activations[local_index];
+            }
 
             if (is_barrier_id(offset)) {
                 value = Config::THREADS_PER_GLOBAL_REDUCTION;
@@ -556,10 +569,10 @@ private:
             dprintf("Thread (%d, %d, %d, %d) - Warm starting scratch "
                 "offset[%d] (%p) = activations[%d] (%p) (%f) \n",
                 blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y,
-                offset, parameters.activation_scratch + offset,
-                offset, parameters.activations + offset, (float)value);
+                scratch_index, parameters.activation_scratch + scratch_index,
+                local_index, parameters.activations + local_index, (float)value);
 
-            parameters.activation_scratch[offset] = value;
+            parameters.activation_scratch[scratch_index] = value;
         }
     }
 
@@ -579,7 +592,20 @@ private:
         for (index_t offset = id; offset < expanded_layer_size * parameters.mini_batch_size;
             offset += size) {
 
-            auto value = deltas_base[expand_id(offset)];
+            index_t position_in_layer = offset % expanded_layer_size;
+            index_t layer_id          = offset / expanded_layer_size;
+
+            index_t local_index   = layer_id * parameters.layer_size + position_in_layer;
+            index_t scratch_index = layer_id * Config::EXPANDED_GRID_TILE_COLUMNS +
+                position_in_layer;
+
+            bool is_in_range = position_in_layer < parameters.layer_size;
+
+            RealType value = 0.0;
+
+            if (is_in_range) {
+                value = deltas_base[local_index];
+            }
 
             if (is_barrier_id(offset)) {
                 value = Config::THREADS_PER_GLOBAL_REDUCTION;
@@ -588,11 +614,11 @@ private:
             dprintf("Thread (%d, %d, %d, %d) - Warm starting scratch "
                 "offset[%d] (%p) = deltas[%d] (%p) (%f) \n",
                 blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y,
-                offset,
-                deltas_scratch_base + offset,
-                offset, deltas_base + offset, value);
+                scratch_index,
+                deltas_scratch_base + scratch_index,
+                local_index, deltas_base + local_index, value);
 
-            deltas_scratch_base[offset] = value;
+            deltas_scratch_base[scratch_index] = value;
         }
     }
 
@@ -870,13 +896,13 @@ private:
         SharedDataStorage& shared_state,
         DataLoadingBuffer& data_buffer) {
 
-        for (index_t i = 0; i < 5; ++i) {
+        /*for (index_t i = 0; i < 5; ++i) {
             external_load_input(register_state, shared_state, data_buffer);
 
             if (register_state.barrier_success) {
                 break;
             }
-        }
+        }*/
     }
 
     __device__ void synchronize_block() {
@@ -942,8 +968,6 @@ private:
                     is_input_thread() ? "input" : "output",
                     offset, block_offset, thread_offset, io_offset + i,
                     load_base + offset + i,
-                    is_input_thread() ?
-                    to_floating_point(reinterpret_cast<const IntType&>(loaded_data.data[i])) :
                     (float)loaded_data.data[i],
                     condition ? "enabled" : "disabled");
             }
@@ -1149,7 +1173,8 @@ private:
 
     __device__ index_t expand_size(index_t size) const {
         return align((size * Config::VALUES_PER_CACHE_LINE +
-            Config::USABLE_VALUES_PER_CACHE_LINE - 1) / Config::USABLE_VALUES_PER_CACHE_LINE, 16);
+            Config::USABLE_VALUES_PER_CACHE_LINE - 1) / Config::USABLE_VALUES_PER_CACHE_LINE,
+            Config::CACHE_LINE_SIZE);
     }
 
     __device__ bool check_barrier(RegisterState& register_state,
@@ -1342,19 +1367,23 @@ private:
 
         RealType* output_buffer = register_state.activation_scratch +
             register_state.scratch_input_to_output_offset -
-            Config::GRID_TILE_ROWS;
+            Config::EXPANDED_GRID_TILE_ROWS;
 
-        index_t block_id = blockIdx.x;
+        index_t blockId = blockIdx.x;
 
-        index_t block_offset = block_id * Config::EXPANDED_BLOCK_TILE_ROWS;
+        index_t blockOffset = blockId * Config::EXPANDED_BLOCK_TILE_ROWS;
 
-        index_t thread_id = get_linear_thread_id();
+        index_t threadId = get_linear_thread_id();
 
-        index_t thread_offset = thread_id;
+        index_t threadOffset = threadId;
 
-        RealType* output_pointer = output_buffer + block_offset + thread_offset;
+        index_t offset = blockOffset + threadOffset;
 
-        atomic_increment(output_pointer, register_state, accumulators);
+        RealType* output_pointer = output_buffer + offset;
+
+        if (offset < Config::EXPANDED_GRID_TILE_ROWS) {
+            atomic_increment(output_pointer, register_state, accumulators);
+        }
     }
 
     __device__ void store_accumulators_back_prop(RegisterState& register_state,
@@ -1362,7 +1391,7 @@ private:
 
         RealType* output_buffer = register_state.activation_scratch -
             register_state.scratch_input_to_output_offset +
-            Config::GRID_TILE_ROWS;
+            Config::EXPANDED_GRID_TILE_ROWS;
 
         index_t blockId = blockIdx.x;
 
@@ -1372,9 +1401,13 @@ private:
 
         index_t threadOffset = threadId * Config::THREAD_TILE_ROWS;
 
-        RealType* output_pointer = output_buffer + blockOffset + threadOffset;
+        index_t offset = blockOffset + threadOffset;
 
-        atomic_increment(output_pointer, register_state, accumulators);
+        RealType* output_pointer = output_buffer + offset;
+
+        if (offset < Config::EXPANDED_GRID_TILE_ROWS) {
+            atomic_increment(output_pointer, register_state, accumulators);
+        }
     }
 
     __device__ void atomic_increment(RealType* output_pointer,
@@ -1389,7 +1422,7 @@ private:
             auto result = atomic_increment_relaxed(output_pointer[offset],
                 accumulators.data[row]);
 
-            t0printf("Thread (%d, %d, %d, %d) - atomic increment %d (%p) "
+            dprintf("Thread (%d, %d, %d, %d) - atomic increment %d (%p) "
                 "%f = %f.\n",
                 blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y, row, output_pointer,
                 (float)(result + accumulators.data[row]),
@@ -1398,7 +1431,7 @@ private:
             atomic_increment_reduce_relaxed(output_pointer[offset],
                 accumulators.data[row]);
 
-            t0printf("Thread (%d, %d, %d, %d) - atomic increment %d (%p) = %f.\n",
+            dprintf("Thread (%d, %d, %d, %d) - atomic increment %d (%p) = %f.\n",
                 blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y, row, output_pointer,
                 (float)accumulators.data[row]);
             #endif
