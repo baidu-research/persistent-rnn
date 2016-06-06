@@ -145,7 +145,7 @@ void TestSimpleRecurrentOpsGradientCheck(prnn::RecurrentLayerDirection direction
 
     prnn::matrix::srand(377);
 
-    size_t layer_size = prnn::rnn::getMaximumSizeRNNForThisGPU(precision);
+    size_t layer_size = 4;//prnn::rnn::getMaximumSizeRNNForThisGPU(precision);
     size_t timesteps  = 2;
     size_t mini_batch = 3;
     size_t samples    = 2;
@@ -162,7 +162,7 @@ void TestSimpleRecurrentOpsGradientCheck(prnn::RecurrentLayerDirection direction
     auto weights = zeros({layer_size, layer_size}, precision);
     auto weights_slice = slice(weights, {0, 0}, {window_rows, window_columns});
 
-    copy(weights_slice, randn({window_rows, window_columns}, precision));
+    copy(weights_slice, rand({window_rows, window_columns}, precision));
 
     apply(weights, weights, prnn::matrix::Multiply(1.0e-2));
 

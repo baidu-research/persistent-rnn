@@ -6,8 +6,9 @@
 
 #include <prnn/detail/util/atomics.h>
 
-#define DEBUG_RECURRENT_OPS 0
-#define NO_MEMORY_OPS 1
+#define DEBUG_RECURRENT_OPS 1
+#define USE_MEMORY_OPS 1
+#define USE_BARRIER 0
 
 #if DEBUG_RECURRENT_OPS
 
@@ -31,6 +32,7 @@
 
 namespace prnn {
 namespace rnn {
+
 
 template<typename Config>
 class PersistentEngineParameters
@@ -61,6 +63,7 @@ public:
       activation_scratch(activations_scratch),
       skip_connection_scale(skip_connection_scale),
       layer_size(config.handle.layerSize),
+      expanded_layer_size(expand_size(config.handle.layerSize)),
       mini_batch_size(config.handle.miniBatchSize),
       timesteps(config.handle.timesteps),
       is_fully_covered(config.handle.layerSize % Config::BLOCK_TILE_COLUMNS == 0),
@@ -80,14 +83,20 @@ public:
             Config::THREAD_TILE_COLUMNS;
     }
 
-    public:
-        __device__ RealType* get_deltas() const {
-            return activations;
-        }
+    index_t expand_size(index_t size) const {
+        return align((size * Config::VALUES_PER_CACHE_LINE +
+            Config::USABLE_VALUES_PER_CACHE_LINE - 1) / Config::USABLE_VALUES_PER_CACHE_LINE,
+            Config::VALUES_PER_CACHE_LINE);
+    }
 
-        __device__ RealType* get_deltas_scratch() const {
-            return activation_scratch;
-        }
+public:
+    __device__ RealType* get_deltas() const {
+        return activations;
+    }
+
+    __device__ RealType* get_deltas_scratch() const {
+        return activation_scratch;
+    }
 
 public:
     const RealType* weights;
@@ -96,6 +105,7 @@ public:
     RealType*       activation_scratch;
     RealType        skip_connection_scale;
     index_t         layer_size;
+    index_t         expanded_layer_size;
     index_t         mini_batch_size;
     index_t         timesteps;
 
@@ -166,6 +176,7 @@ private:
           barrier_success(true),
           skip_connection_scale(parameters.skip_connection_scale),
           layer_size(parameters.layer_size),
+          expanded_layer_size(parameters.expanded_layer_size),
           input_to_output_offset(parameters.input_to_output_offset),
           scratch_input_to_output_offset(parameters.scratch_input_to_output_offset),
           iteration_step(parameters.iteration_step),
@@ -213,6 +224,7 @@ private:
     public:
         RealType skip_connection_scale;
         index_t layer_size;
+        index_t expanded_layer_size;
 
     public:
         index_t input_to_output_offset;
@@ -258,11 +270,12 @@ public:
 
         __shared__ SharedDataStorage shared_state;
 
-        warm_start(register_state, shared_state, data_buffer, accumulators);
-
         ThreadTileWeights weights;
 
         load_weights(weights);
+
+        warm_start(register_state, shared_state, weights, data_buffer, accumulators,
+            output_accumulators);
 
         index_t iteration = parameters.first_iteration + 2;
         for(; iteration < register_state.iterations; ++iteration)
@@ -279,15 +292,19 @@ public:
         }
 
         if (register_state.barrier_success) {
+            t0printf("Thread (%d, %d, %d, %d) - Barrier failed, bailing out of main loop.\n",
+                blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y);
             clean_up(register_state, shared_state, weights, data_buffer, accumulators,
                 output_accumulators, iteration);
         }
 
         if (!register_state.barrier_success) {
-            t0printf("Thread (%d, %d, %d, %d) - Barrier failed, bailing out.\n",
+            #if USE_BARRIER
+            t0printf("Thread (%d, %d, %d, %d) - Barrier failed, bailing out of kernel.\n",
                 blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y);
-            //synchronizer.set_concurrent_execution_failed();
-            //synchronizer.set_phase(iteration);
+            synchronizer.set_concurrent_execution_failed();
+            synchronizer.set_phase(iteration);
+            #endif
         }
     }
 
@@ -335,6 +352,8 @@ public:
                 accumulators, output_accumulators);
 
             if (!register_state.barrier_success) {
+                t0printf("Thread (%d, %d, %d, %d) - Barrier failed, bailing out of main loop.\n",
+                    blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y);
                 break;
             }
         }
@@ -346,7 +365,7 @@ public:
         }
 
         if (!register_state.barrier_success) {
-            t0printf("Thread (%d, %d, %d, %d) - Barrier failed, bailing out.\n",
+            t0printf("Thread (%d, %d, %d, %d) - Barrier failed, bailing out of kernel.\n",
                 blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y);
             synchronizer.set_concurrent_execution_failed();
             synchronizer.set_phase(iteration);
@@ -360,40 +379,58 @@ private:
         ThreadTileAccumulators& accumulators,
         ThreadTileOutputAccumulators& output_accumulators,
         bool load_output = true,
-        bool should_store_accumulators = true)
+        bool stage_one = true,
+        bool stage_two = true,
+        bool stage_three = true)
     {
         ThreadTileInputs thread_inputs;
 
         // 0
-        load_input(register_state, data_buffer, load_output);
-
-        advance_shared_pointers(register_state);
+        if(stage_one)
+        {
+            load_input(register_state, data_buffer, load_output);
+        }
 
         // 1
-        load_thread_tile_inputs(register_state, shared_state, thread_inputs);
-        perform_thread_tile_math(accumulators, weights, thread_inputs);
+        if(stage_two)
+        {
+            load_thread_tile_inputs(register_state, shared_state, thread_inputs);
+        }
 
         // 2
-        store_accumulators_to_shared(shared_state, accumulators);
+        if (stage_three) {
+            store_accumulators_to_shared(shared_state, accumulators);
+            initialize_output_accumulators(register_state, shared_state, output_accumulators);
+        }
 
-        // 0
-        initialize_accumulators(accumulators);
-
-        // 0
-        detect_barrier_success(register_state, shared_state, data_buffer);
-
-        // 0
-        format_input(register_state, shared_state, data_buffer);
+        // 1
+        if(stage_two)
+        {
+            initialize_accumulators(accumulators);
+            perform_thread_tile_math(accumulators, weights, thread_inputs);
+        }
 
         synchronize_block();
 
-        handle_barrier_failure(register_state, shared_state, data_buffer);
-
-        if (should_store_accumulators) {
-            // 2
-            initialize_output_accumulators(register_state, shared_state, output_accumulators);
+        // 2
+        if (stage_three) {
             reduce_thread_tile_shared(register_state, shared_state, output_accumulators);
             store_accumulators(register_state, output_accumulators);
+        }
+
+        advance_shared_pointers(register_state);
+
+        // 0
+        if (stage_one) {
+
+            // 0
+            detect_barrier_success(register_state, shared_state, data_buffer);
+
+            // 0
+            format_input(register_state, shared_state, data_buffer);
+
+            // 0
+            handle_barrier_failure(register_state, shared_state, data_buffer);
         }
 
         advance_pointers(register_state);
@@ -438,20 +475,25 @@ private:
 private:
     __device__ void warm_start(RegisterState& register_state,
         SharedDataStorage& shared_state,
-        DataLoadingBuffer& data_buffer, ThreadTileAccumulators& accumulators) {
+        ThreadTileWeights& weights, DataLoadingBuffer& data_buffer,
+        ThreadTileAccumulators& accumulators,
+        ThreadTileOutputAccumulators& output_accumulators) {
 
-        t0printf("Thread (%d, %d, %d, %d) - Warm starting first iteration.\n",
-            blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y);
+        t0printf("Thread (%d, %d, %d, %d) - Warm starting iteration %d.\n",
+            blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y,
+            parameters.first_iteration);
 
-        load_input(register_state, data_buffer,
-            parameters.first_iteration < parameters.iterations);
-        format_input(register_state, shared_state, data_buffer);
+        perform_iteration(register_state, shared_state, weights, data_buffer,
+            accumulators, output_accumulators, true,
+            true, false, false);
 
-        synchronize_block();
+        t0printf("Thread (%d, %d, %d, %d) - Warm starting iteration %d.\n",
+            blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y,
+            parameters.first_iteration + 1);
 
-        initialize_accumulators(accumulators);
-
-        advance_pointers(register_state);
+        perform_iteration(register_state, shared_state, weights, data_buffer,
+            accumulators, output_accumulators, true,
+            true, true, false);
     }
 
     __device__ void warm_start_back_prop(RegisterState& register_state,
@@ -493,7 +535,7 @@ private:
 
             perform_iteration(register_state, shared_state,
                 weights, data_buffer, accumulators, output_accumulators,
-                false, should_store_accumulators);
+                false, true, true, should_store_accumulators);
         }
     }
 
@@ -541,7 +583,7 @@ private:
         index_t id   = thread_id_in_grid();
         index_t size = grid_size();
 
-        index_t expanded_layer_size = expand_size(parameters.layer_size);
+        index_t expanded_layer_size = parameters.expanded_layer_size;
 
         for (index_t offset = id;
             offset < expanded_layer_size * parameters.mini_batch_size;
@@ -587,7 +629,7 @@ private:
             (parameters.timesteps - 1) * parameters.mini_batch_size *
             Config::EXPANDED_GRID_TILE_ROWS;
 
-        index_t expanded_layer_size = expand_size(parameters.layer_size);
+        index_t expanded_layer_size = parameters.expanded_layer_size;
 
         for (index_t offset = id; offset < expanded_layer_size * parameters.mini_batch_size;
             offset += size) {
@@ -630,7 +672,7 @@ private:
 
     __device__ void safe_load_weights(ThreadTileWeights& weights, bool transpose) {
 
-        index_t thread_tile_base_row = threadIdx.x * Config::THREAD_TILE_ROWS +
+        index_t thread_tile_base_row = threadIdx.x +
             blockIdx.x * Config::BLOCK_TILE_ROWS;
         index_t thread_tile_base_column = threadIdx.y * Config::VALUES_PER_SHARED_LOAD +
             blockIdx.y * Config::BLOCK_TILE_COLUMNS;
@@ -650,7 +692,9 @@ private:
 
                 UNROLL
                 for (index_t row = 0; row < Config::THREAD_TILE_ROWS; ++row) {
-                    index_t current_row    = row         + thread_tile_base_row;
+                    index_t data_row = row * Config::THREADS_PER_COLUMN;
+
+                    index_t current_row    = data_row    + thread_tile_base_row;
                     index_t current_column = data_column + thread_tile_base_column + column_offset;
 
                     weights.data[row][column] = 0.0;
@@ -693,7 +737,9 @@ private:
 
             UNROLL
             for (index_t row = 0; row < Config::THREAD_TILE_ROWS; ++row) {
-                index_t current_row    = row         + thread_tile_base_row;
+                index_t data_row = row * Config::THREADS_PER_COLUMN;
+
+                index_t current_row    = data_row    + thread_tile_base_row;
                 index_t current_column = data_column + thread_tile_base_column + column_offset;
 
                 weights.data[row][column] = 0.0;
@@ -770,9 +816,8 @@ private:
         ThreadTileAccumulators& accumulators) {
 
         UNROLL
-        for (index_t i = 0; i < Config::THREAD_TILE_ROWS;
-            i += Config::SHARED_REDUCE_STORE_VALUES_PER_THREAD) {
-
+        for(index_t i = 0; i < Config::THREAD_TILE_ROWS; ++i)
+        {
             store_thread_accumulators_to_shared(shared_state, accumulators.data[i], i);
         }
     }
@@ -792,7 +837,9 @@ private:
         ThreadTileOutputAccumulators& accumulators) {
 
         UNROLL
-        for (index_t i = 0; i < Config::OUTPUTS_PER_THREAD; ++i) {
+        for (index_t i = 0; i < Config::OUTPUTS_PER_THREAD;
+            i += Config::SHARED_REDUCE_STORE_VALUES_PER_THREAD) {
+
             reduce_accumulator(register_state, shared_state, accumulators.data[i], i);
         }
     }
@@ -896,13 +943,15 @@ private:
         SharedDataStorage& shared_state,
         DataLoadingBuffer& data_buffer) {
 
-        /*for (index_t i = 0; i < 5; ++i) {
+        #if USE_BARRIER
+        for (index_t i = 0; i < 5; ++i) {
             external_load_input(register_state, shared_state, data_buffer);
 
             if (register_state.barrier_success) {
                 break;
             }
-        }*/
+        }
+        #endif
     }
 
     __device__ void synchronize_block() {
@@ -929,7 +978,7 @@ private:
     }
 
     __device__ bool is_input_thread() const {
-        return get_linear_thread_id() < Config::INPUT_LOAD_GROUP_SIZE;
+        return getLinearThreadId() < Config::INPUT_LOAD_GROUP_SIZE;
     }
 
     __device__ void predicated_load_vector(RegisterState& register_state,
@@ -951,30 +1000,32 @@ private:
         GlobalAccessType loaded_data;
 
         UNROLL
-        for (int i = 0; i < Config::GLOBAL_VALUES_PER_THREAD; ++i) {
+        for(int i = 0; i < Config::VALUES_PER_GLOBAL_LOAD; ++i) {
             loaded_data.data[i] = 0;
         }
 
-        bool condition = (io_offset < register_state.layer_size) &&
-            (is_input_thread() || load_output);
+        bool condition = (is_input_thread() && (io_offset < register_state.expanded_layer_size)) ||
+            (!is_input_thread() && load_output && (io_offset < register_state.layer_size));
 
         register_state.barrier_success = condition && is_input_thread();
 
-        for (int i = 0; i < Config::GLOBAL_VALUES_PER_THREAD; ++i) {
-            if (condition) {
+        predicated_atomic_global_load_relaxed(loaded_data, *reinterpret_cast<GlobalAccessType*>(
+            load_base + offset), condition);
+
+        for(int i = 0; i < Config::VALUES_PER_GLOBAL_LOAD; ++i)
+        {
+            if(condition)
+            {
                 dprintf("Thread (%d, %d, %d, %d) - Loading %s activation[%d] "
                     "(%d block, %d thread, %d io) (%p) = %f (%s)\n",
                     blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y,
                     is_input_thread() ? "input" : "output",
-                    offset, block_offset, thread_offset, io_offset + i,
+                    offset + i, block_offset, thread_offset, io_offset + i,
                     load_base + offset + i,
                     (float)loaded_data.data[i],
                     condition ? "enabled" : "disabled");
             }
         }
-
-        predicated_atomic_global_load_relaxed(loaded_data, *reinterpret_cast<GlobalAccessType*>(
-            load_base + offset), condition);
 
         reinterpret_cast<GlobalAccessType&>(value) = loaded_data;
     }
@@ -982,41 +1033,51 @@ private:
     __device__ void store_thread_accumulators_to_shared(SharedDataStorage& shared_state,
         const RealType& accumulator, index_t value_offset) {
 
-        index_t thread_base = get_linear_thread_id() *
-            Config::SHARED_REDUCE_STORE_VALUES_PER_THREAD;
-        index_t offset = value_offset * Config::THREADS_PER_COLUMN;
+        index_t thread_base = getLinearThreadId();
+        index_t offset = value_offset * Config::THREADS_PER_BLOCK;
 
-        index_t shared_offset = thread_base + offset;
+        index_t shared_offset = thread_base + offset + Config::SHARED_REDUCE_OFFSET;
 
-        for (index_t i = 0; i < Config::SHARED_REDUCE_STORE_VALUES_PER_THREAD; ++i) {
             t0printf("Thread (%d, %d, %d, %d) - Storing accumulator[%d] %f to shared[%d]\n",
                 blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y,
-                value_offset, (float)(&accumulator)[i], shared_offset);
-        }
+                value_offset, (float)accumulator, shared_offset);
 
-        reinterpret_cast<SharedAccumulatorStoreType&>(shared_state.data[shared_offset]) =
-            reinterpret_cast<const SharedAccumulatorStoreType&>(accumulator);
+        shared_state.data[shared_offset] = accumulator;
     }
 
     __device__ void reduce_accumulator(RegisterState& register_state,
         SharedDataStorage& shared_state,
         RealType& accumulator, index_t value_offset) {
 
-        index_t stride      = Config::BLOCK_TILE_ROWS;
-        index_t base_offset = get_linear_thread_id() + Config::THREADS_PER_BLOCK * value_offset;
-        index_t offset      = base_offset + Config::SHARED_REDUCE_OFFSET;
+        index_t stride = Config::BLOCK_TILE_ROWS;
+
+        index_t base_offset = get_expanded_input_linear_thread_id() +
+            Config::COMPRESSED_THREADS_PER_BLOCK * value_offset;
+
+        index_t offset = base_offset + Config::SHARED_REDUCE_OFFSET;
 
         UNROLL
-        for (index_t i = 0; i < Config::THREADS_PER_ROW; ++i, offset += stride) {
-            auto value = shared_state.data[offset];
+        for(index_t i = 0; i < Config::THREADS_PER_ROW; ++i, offset += stride)
+        {
+            if(!is_barrier_thread())
+            {
+                RealType value = 0.0;
 
-            t0printf("Thread (%d, %d, %d, %d) - "
-                "Updating output accumulator[%d] %f = %f + shared[%d] %f\n",
-                blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y,
-                base_offset, (float)(accumulator + value), (float)accumulator,
-                offset, (float)value);
+                if(base_offset < Config::BLOCK_TILE_ROWS)
+                {
+                    value = shared_state.data[offset];
 
-            accumulator += value;
+                    t0printf("Thread (%d, %d, %d, %d) - "
+                        "Updating output accumulator[%d] %f = %f + shared[%d] %f\n",
+                        blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y,
+                        base_offset, (float)(accumulator + value), (float)accumulator,
+                        offset, (float)value);
+                }
+
+
+
+                accumulator += value;
+            }
         }
     }
 
@@ -1025,23 +1086,28 @@ private:
         RealType& accumulator, index_t value_offset) {
 
         index_t base_offset = get_expanded_input_linear_thread_id() +
-            Config::THREADS_PER_BLOCK * value_offset;
+            Config::COMPRESSED_THREADS_PER_BLOCK * value_offset;
 
         index_t output_offset = base_offset + Config::SHARED_OUTPUT_OFFSET;
         index_t input_offset  = base_offset + Config::SHARED_INPUT_OFFSET;
 
-        accumulator = shared_state.data[output_offset] +
-            register_state.skip_connection_scale * shared_state.data[input_offset];
+        accumulator = 0.0;
+
+        if(base_offset < Config::BLOCK_TILE_ROWS)
+        {
+            accumulator = shared_state.data[output_offset] +
+                register_state.skip_connection_scale * shared_state.data[input_offset];
+
+            t0printf("Thread (%d, %d, %d, %d) - Initializing output accumulator[%d] %f = "
+                "shared_output[%d] %f + scale %f * shared_input[%d] %f\n",
+                blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y,
+                base_offset, (float)accumulator, output_offset,
+                (float)shared_state.data[output_offset],
+                register_state.skip_connection_scale, input_offset,
+                (float)shared_state.data[input_offset]);
+        }
 
         accumulator = is_barrier_thread() ? 1.0 : accumulator;
-
-        t0printf("Thread (%d, %d, %d, %d) - Initializing output accumulator[%d] %f = "
-            "shared_output[%d] %f + scale %f * shared_input[%d] %f\n",
-            blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y,
-            base_offset, (float)accumulator, output_offset,
-            (float)shared_state.data[output_offset],
-            register_state.skip_connection_scale, input_offset,
-            (float)shared_state.data[input_offset]);
     }
 
     __device__ void predicated_load_back_prop_activation_vector(RegisterState& register_state,
@@ -1113,18 +1179,21 @@ private:
 
     __device__ void predicated_store_vector_shared(RegisterState& register_state,
         SharedDataStorage& shared_state,
-        const RealType& data, index_t value_offset) {
+        const RealType& data, index_t value_offset)
+    {
 
-        index_t thread_offset = get_linear_thread_id() * Config::GLOBAL_VALUES_PER_THREAD;
+        index_t thread_offset = getLinearThreadId() * Config::GLOBAL_VALUES_PER_THREAD;
 
         index_t offset = thread_offset + value_offset + register_state.shared_base;
 
-        for (int i = 0; i < Config::VALUES_PER_SHARED_STORE; ++i) {
+        for (int i = 0; i < Config::VALUES_PER_SHARED_STORE; ++i)
+        {
             index_t block_offset = get_block_id_x() * Config::BLOCK_TILE_COLUMNS;
             index_t offset_in_group = get_thread_id_in_load_group() *
                 Config::GLOBAL_VALUES_PER_THREAD + value_offset + block_offset + i;
 
-            if (offset_in_group < register_state.layer_size) {
+            if (offset_in_group < register_state.layer_size)
+            {
                 dprintf("Thread (%d, %d, %d, %d) - Storing loaded value to shared [%d] "
                     "(group offset %d) = %f\n",
                     blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y,
@@ -1137,21 +1206,21 @@ private:
             reinterpret_cast<const SharedStoreType&>(data);
     }
 
-    __device__ index_t get_thread_id_in_load_group() const {
-        index_t my_thread_id = get_linear_thread_id();
+    __device__ index_t get_thread_id_in_load_group() const
+    {
+        index_t myThreadId = getLinearThreadId();
 
-        bool is_in_input_load_group = my_thread_id < Config::INPUT_LOAD_GROUP_SIZE;
+        bool isInInputLoadGroup = myThreadId < Config::INPUT_LOAD_GROUP_SIZE;
 
-        return is_in_input_load_group ? my_thread_id :
-            my_thread_id - Config::INPUT_LOAD_GROUP_SIZE;
+        return isInInputLoadGroup ? myThreadId : myThreadId - Config::INPUT_LOAD_GROUP_SIZE;
     }
 
-    __device__ index_t get_linear_thread_id() const {
+    __device__ index_t getLinearThreadId() const {
         return threadIdx.x + threadIdx.y * Config::THREADS_PER_COLUMN;
     }
 
     __device__ bool is_barrier_thread() const {
-        return is_barrier_id(get_linear_thread_id());
+        return is_barrier_id(getLinearThreadId());
     }
 
     __device__ bool is_barrier_id(index_t threadId) const {
@@ -1161,7 +1230,7 @@ private:
     }
 
     __device__ index_t get_expanded_input_linear_thread_id() const {
-        return expand_id(get_linear_thread_id());
+        return expand_id(getLinearThreadId());
     }
 
     __device__ index_t expand_id(index_t threadId) const {
@@ -1171,21 +1240,18 @@ private:
         return Config::USABLE_VALUES_PER_CACHE_LINE * segmentId + segmentOffset;
     }
 
-    __device__ index_t expand_size(index_t size) const {
-        return align((size * Config::VALUES_PER_CACHE_LINE +
-            Config::USABLE_VALUES_PER_CACHE_LINE - 1) / Config::USABLE_VALUES_PER_CACHE_LINE,
-            Config::CACHE_LINE_SIZE);
-    }
-
     __device__ bool check_barrier(RegisterState& register_state,
         const RealType& value, index_t value_offset) const {
 
-        t0printf("Thread (%d, %d, %d, %d) - Checking barrier counter %f against requirement %f\n",
-            blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y,
-            (float)value, (float)register_state.reduction_threads_per_value);
-
         index_t offset = value_offset +
             Config::GLOBAL_VALUES_PER_THREAD * get_thread_id_in_load_group();
+
+        if (is_barrier_id(offset)) {
+            dprintf("Thread (%d, %d, %d, %d) - Checking barrier counter %f against "
+                "requirement %f\n",
+                blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y,
+                (float)value, (float)register_state.reduction_threads_per_value);
+        }
 
         return is_barrier_id(offset) ? value >= register_state.reduction_threads_per_value : true;
     }
@@ -1363,35 +1429,35 @@ private:
     }
 
     __device__ void store_accumulators(RegisterState& register_state,
-        ThreadTileOutputAccumulators& accumulators) {
+        ThreadTileOutputAccumulators& accumulators)
+    {
 
         RealType* output_buffer = register_state.activation_scratch +
             register_state.scratch_input_to_output_offset -
-            Config::EXPANDED_GRID_TILE_ROWS;
+            2 * Config::EXPANDED_GRID_TILE_ROWS;
 
         index_t blockId = blockIdx.x;
 
         index_t blockOffset = blockId * Config::EXPANDED_BLOCK_TILE_ROWS;
 
-        index_t threadId = get_linear_thread_id();
+        index_t threadId = getLinearThreadId();
 
         index_t threadOffset = threadId;
 
         index_t offset = blockOffset + threadOffset;
 
-        RealType* output_pointer = output_buffer + offset;
+        RealType* output_pointer = output_buffer;
 
-        if (offset < Config::EXPANDED_GRID_TILE_ROWS) {
-            atomic_increment(output_pointer, register_state, accumulators);
-        }
+        atomic_increment(output_pointer, register_state, accumulators, offset);
     }
 
     __device__ void store_accumulators_back_prop(RegisterState& register_state,
-        ThreadTileOutputAccumulators& accumulators) {
+        ThreadTileOutputAccumulators& accumulators)
+    {
 
         RealType* output_buffer = register_state.activation_scratch -
             register_state.scratch_input_to_output_offset +
-            Config::EXPANDED_GRID_TILE_ROWS;
+            2 * Config::EXPANDED_GRID_TILE_ROWS;
 
         index_t blockId = blockIdx.x;
 
@@ -1403,38 +1469,39 @@ private:
 
         index_t offset = blockOffset + threadOffset;
 
-        RealType* output_pointer = output_buffer + offset;
+        RealType* output_pointer = output_buffer;
 
-        if (offset < Config::EXPANDED_GRID_TILE_ROWS) {
-            atomic_increment(output_pointer, register_state, accumulators);
-        }
+        atomic_increment(output_pointer, register_state, accumulators, offset);
     }
 
     __device__ void atomic_increment(RealType* output_pointer,
         RegisterState& register_state,
-        ThreadTileOutputAccumulators& accumulators) {
+        ThreadTileOutputAccumulators& accumulators, index_t offset) {
 
         UNROLL
-        for (index_t row = 0, offset = Config::THREADS_PER_BLOCK;
-            row < Config::OUTPUTS_PER_THREAD; row += 1) {
+        for (index_t row = 0;
+            row < Config::OUTPUTS_PER_THREAD; row += 1, offset += Config::THREADS_PER_BLOCK) {
 
-            #if DEBUG_RECURRENT_OPS
-            auto result = atomic_increment_relaxed(output_pointer[offset],
-                accumulators.data[row]);
+            if(offset < register_state.expanded_layer_size)
+            {
+                #if DEBUG_RECURRENT_OPS
+                auto result = atomic_increment_relaxed(output_pointer[offset],
+                    accumulators.data[row]);
 
-            dprintf("Thread (%d, %d, %d, %d) - atomic increment %d (%p) "
-                "%f = %f.\n",
-                blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y, row, output_pointer,
-                (float)(result + accumulators.data[row]),
-                (float)accumulators.data[row]);
-            #else
-            atomic_increment_reduce_relaxed(output_pointer[offset],
-                accumulators.data[row]);
+                dprintf("Thread (%d, %d, %d, %d) - atomic increment %d (%p) "
+                    "%f = %f.\n",
+                    blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y, row, output_pointer + offset,
+                    (float)(result + accumulators.data[row]),
+                    (float)accumulators.data[row]);
+                #else
+                atomic_increment_reduce_relaxed(output_pointer[offset],
+                    accumulators.data[row]);
 
-            dprintf("Thread (%d, %d, %d, %d) - atomic increment %d (%p) = %f.\n",
-                blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y, row, output_pointer,
-                (float)accumulators.data[row]);
-            #endif
+                dprintf("Thread (%d, %d, %d, %d) - atomic increment %d (%p) = %f.\n",
+                    blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y, row, output_pointer + offset,
+                    (float)accumulators.data[row]);
+                #endif
+            }
         }
 
     }

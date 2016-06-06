@@ -274,6 +274,11 @@ public:
     };
 
     enum {
+        COMPRESSED_THREADS_PER_BLOCK = THREADS_PER_BLOCK * Config::USABLE_VALUES_PER_CACHE_LINE /
+            Config::VALUES_PER_CACHE_LINE
+    };
+
+    enum {
         CACHE_LINE_SIZE = Config::CACHE_LINE_SIZE,
         VALUES_PER_CACHE_LINE = Config::VALUES_PER_CACHE_LINE,
         USABLE_VALUES_PER_CACHE_LINE = Config::USABLE_VALUES_PER_CACHE_LINE
@@ -293,8 +298,8 @@ public:
     };
 
     enum {
-        SHARED_BUFFER_SIZE = get_next_power_of_two(BLOCK_TILE_COLUMNS +
-            EXPANDED_BLOCK_TILE_ROWS + THREADS_PER_ROW * BLOCK_TILE_ROWS + BARRIER_STATUS_SIZE)
+        SHARED_BUFFER_SIZE = get_next_power_of_two(EXPANDED_BLOCK_TILE_COLUMNS +
+            BLOCK_TILE_ROWS + THREADS_PER_ROW * BLOCK_TILE_ROWS + BARRIER_STATUS_SIZE)
     };
 
     enum {
@@ -325,11 +330,12 @@ public:
     };
 
     enum {
-        VALUES_PER_OUTPUT_SHARED_LOAD = VALUES_PER_WEIGHT_LOAD
+        VALUES_PER_OUTPUT_SHARED_LOAD = evenly_divisible(THREAD_TILE_ROWS,
+            (16 + sizeof(RealType) - 1) / sizeof(RealType))
     };
 
     enum {
-        INPUT_LOAD_GROUP_SIZE  = BLOCK_TILE_COLUMNS / GLOBAL_VALUES_PER_THREAD,
+        INPUT_LOAD_GROUP_SIZE  = EXPANDED_BLOCK_TILE_COLUMNS / GLOBAL_VALUES_PER_THREAD,
         OUTPUT_LOAD_GROUP_SIZE = BLOCK_TILE_ROWS / GLOBAL_VALUES_PER_THREAD
     };
 
@@ -543,7 +549,7 @@ public:
     }
 
     dim3 threads() const {
-        return dim3(TileParameters::THREADS_PER_ROW, TileParameters::THREADS_PER_COLUMN, 1);
+        return dim3(TileParameters::THREADS_PER_COLUMN, TileParameters::THREADS_PER_ROW, 1);
     }
 
     index_t thread_count() const {
