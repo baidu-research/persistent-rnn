@@ -270,6 +270,8 @@ public:
 
         __shared__ SharedDataStorage shared_state;
 
+        initialize_shared_state(shared_state);
+
         ThreadTileWeights weights;
 
         load_weights(weights);
@@ -287,21 +289,21 @@ public:
                 output_accumulators);
 
             if (!register_state.barrier_success) {
+                t0printf("Thread (%d, %d, %d, %d) - Barrier failed, bailing out of main loop.\n",
+                    blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y);
                 break;
             }
         }
 
         if (register_state.barrier_success) {
-            t0printf("Thread (%d, %d, %d, %d) - Barrier failed, bailing out of main loop.\n",
-                blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y);
             clean_up(register_state, shared_state, weights, data_buffer, accumulators,
                 output_accumulators, iteration);
         }
 
         if (!register_state.barrier_success) {
-            #if USE_BARRIER
             t0printf("Thread (%d, %d, %d, %d) - Barrier failed, bailing out of kernel.\n",
                 blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y);
+            #if USE_BARRIER
             synchronizer.set_concurrent_execution_failed();
             synchronizer.set_phase(iteration);
             #endif
@@ -333,6 +335,8 @@ public:
         RegisterState register_state(parameters);
 
         __shared__ SharedDataStorage shared_state;
+
+        initialize_shared_state(shared_state);
 
         warm_start_back_prop(register_state, shared_state,
             data_buffer, activation_buffer, accumulators);
@@ -400,7 +404,6 @@ private:
         // 2
         if (stage_three) {
             store_accumulators_to_shared(shared_state, accumulators);
-            initialize_output_accumulators(register_state, shared_state, output_accumulators);
         }
 
         // 1
@@ -416,6 +419,12 @@ private:
         if (stage_three) {
             reduce_thread_tile_shared(register_state, shared_state, output_accumulators);
             store_accumulators(register_state, output_accumulators);
+        }
+
+        // 1
+        if(stage_two)
+        {
+            initialize_output_accumulators(register_state, shared_state, output_accumulators);
         }
 
         advance_shared_pointers(register_state);
@@ -531,7 +540,7 @@ private:
             t0printf("Thread (%d, %d, %d, %d) - Clean up iteration %d.\n",
                 blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y, iteration);
 
-            bool should_store_accumulators = iteration < parameters.iterations + 1;
+            bool should_store_accumulators = iteration < parameters.iterations + 2;
 
             perform_iteration(register_state, shared_state,
                 weights, data_buffer, accumulators, output_accumulators,
@@ -561,6 +570,11 @@ private:
         }
     }
 
+private:
+    __device__ void initialize_shared_state(SharedDataStorage& shared_state)
+    {
+        shared_state.data[Config::SHARED_BARRIER_OFFSET] = 0;
+    }
 
 private:
     __device__ bool is_restarted() {
@@ -845,11 +859,13 @@ private:
     }
 
     __device__ void load_back_prop_activations(RegisterState& register_state,
-        DataLoadingBuffer& activation_buffer) {
+        DataLoadingBuffer& activation_buffer)
+    {
 
         UNROLL
         for (index_t i = 0; i < Config::GLOBAL_VALUES_PER_THREAD;
-            i += Config::VALUES_PER_GLOBAL_LOAD) {
+            i += Config::VALUES_PER_GLOBAL_LOAD)
+        {
 
             predicated_load_back_prop_activation_vector(register_state,
                 activation_buffer.data[i], i);
@@ -858,41 +874,51 @@ private:
 
     __device__ void detect_barrier_success(RegisterState& register_state,
         SharedDataStorage& shared_state,
-        DataLoadingBuffer& data_buffer) {
-
+        DataLoadingBuffer& data_buffer)
+    {
         bool performing_check = register_state.barrier_success;
 
         register_state.barrier_success = true;
 
         UNROLL
-        for (index_t i = 0; i < Config::GLOBAL_VALUES_PER_THREAD; ++i) {
+        for (index_t i = 0; i < Config::GLOBAL_VALUES_PER_THREAD; ++i)
+        {
             register_state.barrier_success &=
                 (!performing_check) || check_barrier(register_state, data_buffer.data[i], i);
         }
 
-        index_t shared_offset = register_state.shared_base + Config::SHARED_BARRIER_OFFSET;
+        #if USE_BARRIER
+        index_t shared_offset = Config::SHARED_BARRIER_OFFSET;
 
-        if (!register_state.barrier_success) {
+        if (!register_state.barrier_success)
+        {
             shared_state.data[shared_offset] = RealType(1.0);
         }
+        #endif
     }
 
     __device__ void apply_back_prop_nonlinearity(DataLoadingBuffer& data_buffer,
-        DataLoadingBuffer& activation_buffer) {
+        DataLoadingBuffer& activation_buffer)
+    {
 
         UNROLL
-        for (index_t i = 0; i < Config::GLOBAL_VALUES_PER_THREAD; ++i) {
-            if (is_input_thread()) {
+        for (index_t i = 0; i < Config::GLOBAL_VALUES_PER_THREAD; ++i)
+        {
+            if (is_input_thread())
+            {
                 data_buffer.data[i] = parameters.config.apply_activation_derivative(
                     activation_buffer.data[i], data_buffer.data[i]);
             }
         }
     }
 
-    __device__ void apply_nonlinearity(DataLoadingBuffer& data_buffer) {
+    __device__ void apply_nonlinearity(DataLoadingBuffer& data_buffer)
+    {
         UNROLL
-        for (index_t i = 0; i < Config::GLOBAL_VALUES_PER_THREAD; ++i) {
-            if (is_input_thread()) {
+        for (index_t i = 0; i < Config::GLOBAL_VALUES_PER_THREAD; ++i)
+        {
+            if (is_input_thread())
+            {
                 data_buffer.data[i] = parameters.config.apply_activation_function(
                     data_buffer.data[i]);
             }
@@ -900,10 +926,12 @@ private:
     }
 
     __device__ void store_nonlinear_input_global(RegisterState& register_state,
-        DataLoadingBuffer& data_buffer) {
+        DataLoadingBuffer& data_buffer)
+    {
         UNROLL
         for (index_t i = 0; i < Config::GLOBAL_VALUES_PER_THREAD;
-            i += Config::VALUES_PER_GLOBAL_LOAD) {
+            i += Config::VALUES_PER_GLOBAL_LOAD)
+        {
 
             predicated_store_vector(register_state, data_buffer.data[i], i);
         }
@@ -911,24 +939,27 @@ private:
 
     __device__ void store_nonlinear_input_shared(RegisterState& register_state,
         SharedDataStorage& shared_state,
-        DataLoadingBuffer& data_buffer) {
+        DataLoadingBuffer& data_buffer)
+    {
 
         UNROLL
         for (index_t i = 0; i < Config::GLOBAL_VALUES_PER_THREAD;
-            i += Config::VALUES_PER_SHARED_STORE) {
+            i += Config::VALUES_PER_SHARED_STORE)
+        {
             predicated_store_vector_shared(register_state, shared_state, data_buffer.data[i], i);
         }
     }
 
     __device__ void handle_barrier_failure(RegisterState& register_state,
         SharedDataStorage& shared_state,
-        DataLoadingBuffer& data_buffer) {
-
-        index_t shared_offset = register_state.shared_base + Config::SHARED_BARRIER_OFFSET;
+        DataLoadingBuffer& data_buffer)
+    {
+        index_t shared_offset = Config::SHARED_BARRIER_OFFSET;
 
         register_state.barrier_success = shared_state.data[shared_offset] == 0.0;
 
-        if (!register_state.barrier_success) {
+        if (!register_state.barrier_success)
+        {
             DataLoadingBuffer temp_buffer;
             RegisterState temp_state = register_state;
 
@@ -941,13 +972,16 @@ private:
 
     __device__ __noinline__ void spin_on_barrier_failure(RegisterState& register_state,
         SharedDataStorage& shared_state,
-        DataLoadingBuffer& data_buffer) {
+        DataLoadingBuffer& data_buffer)
+    {
 
         #if USE_BARRIER
-        for (index_t i = 0; i < 5; ++i) {
+        for (index_t i = 0; i < 5; ++i)
+        {
             external_load_input(register_state, shared_state, data_buffer);
 
-            if (register_state.barrier_success) {
+            if (register_state.barrier_success)
+            {
                 break;
             }
         }
@@ -1068,13 +1102,11 @@ private:
                     value = shared_state.data[offset];
 
                     t0printf("Thread (%d, %d, %d, %d) - "
-                        "Updating output accumulator[%d] %f = %f + shared[%d] %f\n",
+                        "Updating output (reduce) accumulator[%d] %f = %f + shared[%d] %f\n",
                         blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y,
                         base_offset, (float)(accumulator + value), (float)accumulator,
                         offset, (float)value);
                 }
-
-
 
                 accumulator += value;
             }
@@ -1083,13 +1115,16 @@ private:
 
     __device__ void initialize_output_accumulator(RegisterState& register_state,
         SharedDataStorage& shared_state,
-        RealType& accumulator, index_t value_offset) {
+        RealType& accumulator, index_t value_offset)
+    {
 
         index_t base_offset = get_expanded_input_linear_thread_id() +
             Config::COMPRESSED_THREADS_PER_BLOCK * value_offset;
 
-        index_t output_offset = base_offset + Config::SHARED_OUTPUT_OFFSET;
-        index_t input_offset  = base_offset + Config::SHARED_INPUT_OFFSET;
+        index_t output_offset = base_offset + register_state.shared_base +
+            Config::SHARED_OUTPUT_OFFSET;
+        index_t input_offset = base_offset + register_state.shared_base +
+            Config::SHARED_INPUT_OFFSET;
 
         accumulator = 0.0;
 
@@ -1111,7 +1146,8 @@ private:
     }
 
     __device__ void predicated_load_back_prop_activation_vector(RegisterState& register_state,
-        RealType& value, index_t value_offset) {
+        RealType& value, index_t value_offset)
+    {
 
         index_t  block_offset = get_block_id_x() * Config::BLOCK_TILE_COLUMNS;
         index_t thread_offset = get_thread_id_in_load_group() * Config::GLOBAL_VALUES_PER_THREAD;
@@ -1124,7 +1160,8 @@ private:
         GlobalAccessType loaded_data;
 
         UNROLL
-        for (int i = 0; i < Config::GLOBAL_VALUES_PER_THREAD; ++i) {
+        for (int i = 0; i < Config::GLOBAL_VALUES_PER_THREAD; ++i)
+        {
             loaded_data.data[i] = 0;
         }
 
@@ -1133,8 +1170,10 @@ private:
         predicated_atomic_global_load_relaxed(loaded_data, *reinterpret_cast<GlobalAccessType*>(
             load_base + offset), condition);
 
-        for (int i = 0; i < Config::GLOBAL_VALUES_PER_THREAD; ++i) {
-            if (condition) {
+        for (int i = 0; i < Config::GLOBAL_VALUES_PER_THREAD; ++i)
+        {
+            if (condition)
+            {
                 dprintf("Thread (%d, %d, %d, %d) - Loading back prop activation[%d] "
                     "(%d block, %d thread, %d io) (%p) = %f (%s)\n",
                     blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y,
@@ -1149,7 +1188,8 @@ private:
     }
 
     __device__ void predicated_store_vector(RegisterState& register_state,
-        RealType& data, index_t value_offset) {
+        RealType& data, index_t value_offset)
+    {
 
         RealType* output_base = get_output_pointer(register_state);
 
@@ -1165,8 +1205,10 @@ private:
             *reinterpret_cast<GlobalAccessType*>(output_base + offset),
             reinterpret_cast<GlobalAccessType&>(data), condition);
 
-        for (int i = 0; i < Config::GLOBAL_VALUES_PER_THREAD; ++i) {
-            if (condition) {
+        for (int i = 0; i < Config::GLOBAL_VALUES_PER_THREAD; ++i)
+        {
+            if (condition)
+            {
                 dprintf("Thread (%d, %d, %d, %d) - Saving final activation[%d] "
                     "(%d block, %d thread, %d value) (%p) = %f\n",
                     blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y,
@@ -1412,7 +1454,7 @@ private:
                 (column_base + column + column_offset < parameters.layer_size);
 
             if (condition) {
-                t0printf("Thread (%d, %d, %d, %d) - accumulator[%d] %f = weight[%d, %d] %f * "
+                t0printf("Thread (%d, %d, %d, %d) - ffma accumulator[%d] %f = weight[%d, %d] %f * "
                     "activation[%d] %f + accumulator[%d] %f.\n",
                     blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y, row + r,
                     (float)(accumulators.data[row + r] + weights.data[row + r][column] *
