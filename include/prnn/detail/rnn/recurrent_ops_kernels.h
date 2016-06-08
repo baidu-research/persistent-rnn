@@ -15,7 +15,7 @@
 #define dprintf(...) do { if( blockIdx.x == 0 && blockIdx.y == 0) \
     { std::printf(__VA_ARGS__); } } while(0)
 
-#define t0printf(...) do { if(threadIdx.x == 0 && threadIdx.y == 0 && \
+#define t0printf(...) do { if(threadIdx.x == 0 && (threadIdx.y == 0 || threadIdx.x == 1) && \
     blockIdx.x == 0 && blockIdx.y == 0) { std::printf(__VA_ARGS__); } } while(0)
 
 #define UNROLL
@@ -606,11 +606,13 @@ private:
             index_t position_in_layer = offset % expanded_layer_size;
             index_t layer_id          = offset / expanded_layer_size;
 
-            index_t local_index   = layer_id * parameters.layer_size + position_in_layer;
+            index_t expanded_position_in_layer = expand_id(position_in_layer);
+
+            index_t local_index   = layer_id * parameters.layer_size + expanded_position_in_layer;
             index_t scratch_index = layer_id * Config::EXPANDED_GRID_TILE_COLUMNS +
                 position_in_layer;
 
-            bool is_in_range = position_in_layer < parameters.layer_size;
+            bool is_in_range = expanded_position_in_layer < parameters.layer_size;
 
             RealType value = 0.0;
 
@@ -932,7 +934,6 @@ private:
         for (index_t i = 0; i < Config::GLOBAL_VALUES_PER_THREAD;
             i += Config::VALUES_PER_GLOBAL_LOAD)
         {
-
             predicated_store_vector(register_state, data_buffer.data[i], i);
         }
     }
@@ -1190,23 +1191,24 @@ private:
     __device__ void predicated_store_vector(RegisterState& register_state,
         RealType& data, index_t value_offset)
     {
-
         RealType* output_base = get_output_pointer(register_state);
 
-        index_t block_offset  = get_block_id_x() * Config::EXPANDED_BLOCK_TILE_COLUMNS;
-        index_t thread_offset = get_expanded_input_linear_thread_id() *
+        index_t block_offset  = get_block_id_x() * Config::BLOCK_TILE_COLUMNS;
+        index_t thread_offset = getLinearThreadId() *
             Config::GLOBAL_VALUES_PER_THREAD;
 
-        index_t offset = thread_offset + block_offset + value_offset;
-
-        bool condition = (offset < register_state.layer_size) && is_input_thread();
-
-        predicated_atomic_global_store_relaxed(
-            *reinterpret_cast<GlobalAccessType*>(output_base + offset),
-            reinterpret_cast<GlobalAccessType&>(data), condition);
 
         for (int i = 0; i < Config::GLOBAL_VALUES_PER_THREAD; ++i)
         {
+            index_t offset_in_block = thread_offset + value_offset + i;
+            index_t offset = expand_id(offset_in_block) + block_offset;
+
+            bool condition = (offset < register_state.layer_size) && is_input_thread() &&
+                !is_barrier_id(offset_in_block);
+
+            predicated_atomic_global_store_relaxed(*(output_base + offset),
+                (&data)[i], condition);
+
             if (condition)
             {
                 dprintf("Thread (%d, %d, %d, %d) - Saving final activation[%d] "
@@ -1473,7 +1475,6 @@ private:
     __device__ void store_accumulators(RegisterState& register_state,
         ThreadTileOutputAccumulators& accumulators)
     {
-
         RealType* output_buffer = register_state.activation_scratch +
             register_state.scratch_input_to_output_offset -
             2 * Config::EXPANDED_GRID_TILE_ROWS;
