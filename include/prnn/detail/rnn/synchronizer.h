@@ -135,16 +135,22 @@ public:
 
 public:
     __device__ index_t get_phase() {
-        return *current_phase_;
+        return current_phase_[block_id()];
     }
 
     __device__ void set_phase(index_t phase) {
-        *current_phase_ = phase;
+        current_phase_[block_id()] = phase;
     }
 
 public:
     __device__ void set_concurrent_execution_failed() {
         *barrier_failed_flag_ = 1;
+    }
+
+public:
+    __device__ index_t block_id() const
+    {
+        return blockIdx.x + blockDim.x * blockIdx.y;
     }
 
 private:

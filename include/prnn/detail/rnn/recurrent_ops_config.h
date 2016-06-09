@@ -389,6 +389,10 @@ public:
         DIRECTION = Config::DIRECTION
     };
 
+    enum {
+        BARRIER_WAIT_COUNT = 3333 // about 1ms
+    };
+
 public:
     typedef typename GetIntType<sizeof(RealType)>::type IntType;
     typedef prnn::types::fixed_point<IntType, FIXED_POINT_FRACTIONAL_BITS> FixedPointType;

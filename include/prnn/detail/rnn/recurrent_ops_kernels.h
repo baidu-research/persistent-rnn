@@ -8,7 +8,7 @@
 
 #define DEBUG_RECURRENT_OPS 1
 #define USE_MEMORY_OPS 1
-#define USE_BARRIER 0
+#define USE_BARRIER 1
 
 #if DEBUG_RECURRENT_OPS
 
@@ -79,8 +79,8 @@ public:
 
         scratch_step_size = Config::EXPANDED_GRID_TILE_ROWS;
 
-        reduction_threads_per_value = (layer_size + Config::THREAD_TILE_COLUMNS - 1) /
-            Config::THREAD_TILE_COLUMNS;
+        reduction_threads_per_value = (layer_size + Config::BLOCK_TILE_COLUMNS - 1) /
+            Config::BLOCK_TILE_COLUMNS;
     }
 
     index_t expand_size(index_t size) const {
@@ -290,24 +290,27 @@ public:
             perform_iteration(register_state, shared_state, weights, data_buffer, accumulators,
                 output_accumulators);
 
-            if (!register_state.barrier_success) {
+            if(!register_state.barrier_success)
+            {
                 t0printf("Thread (%d, %d, %d, %d) - Barrier failed, bailing out of main loop.\n",
                     blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y);
                 break;
             }
         }
 
-        if (register_state.barrier_success) {
+        if(register_state.barrier_success)
+        {
             clean_up(register_state, shared_state, weights, data_buffer, accumulators,
                 output_accumulators, iteration);
         }
 
-        if (!register_state.barrier_success) {
+        if(!register_state.barrier_success)
+        {
             t0printf("Thread (%d, %d, %d, %d) - Barrier failed, bailing out of kernel.\n",
                 blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y);
             #if USE_BARRIER
             synchronizer.set_concurrent_execution_failed();
-            synchronizer.set_phase(iteration);
+            synchronizer.set_phase(iteration - 1);
             #endif
         }
     }
@@ -412,7 +415,10 @@ private:
         // 0
         if(stage_one)
         {
-            handle_barrier_failure(register_state, shared_state, data_buffer);
+            if(!check_for_critical_barrier_failure(register_state, shared_state))
+            {
+                return;
+            }
         }
 
         // 2
@@ -440,7 +446,7 @@ private:
         // 0
         if(stage_one)
         {
-            detect_barrier_success(register_state, shared_state, data_buffer);
+            wait_for_barrier(register_state, shared_state, data_buffer);
         }
 
         // 0
@@ -479,7 +485,6 @@ private:
 
         detect_barrier_success(register_state, shared_state, data_buffer);
 
-        handle_barrier_failure(register_state, shared_state, data_buffer);
         format_input_back_prop(register_state, shared_state, data_buffer, activation_buffer);
 
         synchronize_block();
@@ -820,7 +825,6 @@ private:
         DataLoadingBuffer& data_buffer) {
 
         load_input(register_state, data_buffer);
-        synchronize_block();
         detect_barrier_success(register_state, shared_state, data_buffer);
     }
 
@@ -883,6 +887,32 @@ private:
         }
     }
 
+    __device__ void wait_for_barrier(RegisterState& register_state,
+        SharedDataStorage& shared_state,
+        DataLoadingBuffer& data_buffer)
+    {
+        detect_barrier_success(register_state, shared_state, data_buffer);
+
+        #if USE_BARRIER
+        if(!register_state.barrier_success)
+        {
+            DataLoadingBuffer temp_buffer;
+            RegisterState temp_state = register_state;
+
+            spin_on_barrier_failure(temp_state, shared_state, temp_buffer);
+            data_buffer = temp_buffer;
+            register_state = temp_state;
+        }
+
+        index_t shared_offset = Config::SHARED_BARRIER_OFFSET;
+
+        if (!register_state.barrier_success)
+        {
+            shared_state.data[shared_offset] = RealType(1.0);
+        }
+        #endif
+    }
+
     __device__ void detect_barrier_success(RegisterState& register_state,
         SharedDataStorage& shared_state,
         DataLoadingBuffer& data_buffer)
@@ -891,19 +921,12 @@ private:
 
         register_state.barrier_success = true;
 
+        #if USE_BARRIER
         UNROLL
         for (index_t i = 0; i < Config::GLOBAL_VALUES_PER_THREAD; ++i)
         {
             register_state.barrier_success &=
                 (!performing_check) || check_barrier(register_state, data_buffer.data[i], i);
-        }
-
-        #if USE_BARRIER
-        index_t shared_offset = Config::SHARED_BARRIER_OFFSET;
-
-        if (!register_state.barrier_success)
-        {
-            shared_state.data[shared_offset] = RealType(1.0);
         }
         #endif
     }
@@ -960,37 +983,26 @@ private:
         }
     }
 
-    __device__ void handle_barrier_failure(RegisterState& register_state,
-        SharedDataStorage& shared_state,
-        DataLoadingBuffer& data_buffer)
+    __device__ bool check_for_critical_barrier_failure(RegisterState& register_state,
+        SharedDataStorage& shared_state)
     {
         index_t shared_offset = Config::SHARED_BARRIER_OFFSET;
 
         register_state.barrier_success = shared_state.data[shared_offset] == 0.0;
 
-        if (!register_state.barrier_success)
-        {
-            DataLoadingBuffer temp_buffer;
-            RegisterState temp_state = register_state;
-
-            spin_on_barrier_failure(temp_state, shared_state, temp_buffer);
-            data_buffer = temp_buffer;
-            register_state = temp_state;
-        }
-
+        return register_state.barrier_success;
     }
 
     __device__ __noinline__ void spin_on_barrier_failure(RegisterState& register_state,
         SharedDataStorage& shared_state,
         DataLoadingBuffer& data_buffer)
     {
-
         #if USE_BARRIER
-        for (index_t i = 0; i < 5; ++i)
+        for(index_t i = 0; i < Config::BARRIER_WAIT_COUNT; ++i)
         {
             external_load_input(register_state, shared_state, data_buffer);
 
-            if (register_state.barrier_success)
+            if(register_state.barrier_success)
             {
                 break;
             }
