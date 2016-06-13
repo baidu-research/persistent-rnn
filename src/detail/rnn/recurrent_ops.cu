@@ -715,7 +715,7 @@ void backPropDeltasRecurrent(const matrix::DynamicView& deltas,
     const matrix::ConstDynamicView& weights, const matrix::ConstDynamicView& activations,
     const matrix::DynamicView& scratch, const RecurrentOpsHandle& handle)
 {
-   // if(!parallel::isCudaEnabled() || !handle.allowPersistentKernels)
+    if(!parallel::isCudaEnabled() || !handle.allowPersistentKernels)
     {
         detail::genericBackPropDeltasRecurrent(deltas, weights, activations, handle);
         return;
