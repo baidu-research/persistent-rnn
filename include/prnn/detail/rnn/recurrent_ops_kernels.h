@@ -1047,6 +1047,11 @@ private:
         SharedDataStorage& shared_state,
         DataLoadingBuffer& data_buffer)
     {
+        if(register_state.barrier_success)
+        {
+            return;
+        }
+
         #if USE_BARRIER
         for(index_t i = 0; i < Config::BARRIER_WAIT_COUNT; ++i)
         {
