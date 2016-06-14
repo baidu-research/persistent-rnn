@@ -145,10 +145,10 @@ void TestSimpleRecurrentOpsGradientCheck(prnn::RecurrentLayerDirection direction
 
     prnn::matrix::srand(377);
 
-    size_t layer_size = 192;//prnn::rnn::getMaximumSizeRNNForThisGPU(precision);
-    size_t timesteps  = 3;
+    size_t layer_size = prnn::rnn::getMaximumSizeRNNForThisGPU(precision);
+    size_t timesteps  = 5;
     size_t mini_batch = 3;
-    size_t samples    = 32;
+    size_t samples    = 10;
 
     size_t window_rows    = layer_size;
     size_t window_columns = window_rows;
@@ -229,9 +229,9 @@ void TestSimpleRecurrentOpsGradientCheck(prnn::RecurrentLayerDirection direction
 
     size_t gradient_count = window_rows * window_columns;
 
-    std::vector<size_t> sample_positions = {0};
+    std::vector<size_t> sample_positions = {0, 5};
 
-    for (size_t sample = 0; sample != samples; ++sample) {
+    while (sample_positions.size() < samples) {
         sample_positions.push_back(random_engine() % gradient_count);
     }
 

@@ -202,6 +202,19 @@ void CudaRuntimeLibrary::cudaDeviceGetAttribute(int* value, cudaDeviceAttr attr,
     }
 }
 
+void CudaRuntimeLibrary::cudaDeviceSetLimit(cudaLimit limit, size_t value)
+{
+    _check();
+
+    int status = (*_interface.cudaDeviceSetLimit)(limit, value);
+
+    if(status != cudaSuccess)
+    {
+        throw std::runtime_error("Cuda device set limit failed: " +
+            cudaGetErrorString(status));
+    }
+}
+
 std::string CudaRuntimeLibrary::cudaGetErrorString(int error)
 {
     _check();
@@ -287,11 +300,15 @@ void CudaRuntimeLibrary::Interface::load()
         DynLink(cudaMemcpyAsync);
         DynLink(cudaGetErrorString);
         DynLink(cudaDeviceGetAttribute);
+        DynLink(cudaDeviceSetLimit);
 
         #undef DynLink
 
         CudaRuntimeLibrary::cudaSetDevice(
             util::KnobDatabase::getKnobValue<int>("Cuda::Device", 0));
+
+        CudaRuntimeLibrary::cudaDeviceSetLimit(cudaLimitPrintfFifoSize,
+            util::KnobDatabase::getKnobValue<size_t>("Cuda::PrintfFifoBytes", (1 << 24)));
 
         util::log("CudaRuntimeLibrary") << " Loaded library '" << libraryName
             << "' successfully\n";

@@ -43,6 +43,15 @@ public:
         cudaHostAllocMappedFlag = 2
     };
 
+    enum cudaLimit
+    {
+        cudaLimitStackSize = 0x00,
+        cudaLimitPrintfFifoSize = 0x01,
+        cudaLimitMallocHeapSize = 0x02,
+        cudaLimitDevRuntimeSyncDepth = 0x03,
+        cudaLimitDevRuntimePendingLaunchCount = 0x04
+    };
+
 public:
     static void load();
     static bool loaded();
@@ -63,6 +72,7 @@ public:
         size_t bytes, cudaMemcpyKind kind = cudaMemcpyDefault, void* stream = nullptr);
 
     static void cudaDeviceGetAttribute(int* value, cudaDeviceAttr attr, int device);
+    static void cudaDeviceSetLimit(cudaLimit limit, size_t value);
 
 public:
     static std::string cudaGetErrorString(int error);
@@ -88,6 +98,7 @@ private:
             cudaMemcpyKind kind, void* stream);
 
         int (*cudaDeviceGetAttribute)(int* value, cudaDeviceAttr attr, int device);
+        int (*cudaDeviceSetLimit)(cudaLimit limit, size_t value);
 
     public:
         const char* (*cudaGetErrorString)(int error);
