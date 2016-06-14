@@ -398,7 +398,7 @@ public:
     };
 
     enum {
-        BARRIER_WAIT_COUNT = 30//3333 // about 10us
+        BARRIER_WAIT_COUNT = 3333 // about 10us
     };
 
 public:
