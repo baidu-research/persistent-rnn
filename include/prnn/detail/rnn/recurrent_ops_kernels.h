@@ -1121,6 +1121,8 @@ private:
 
             if(register_state.barrier_success)
             {
+                t0printf("Thread (%d, %d, %d, %d) - Barrier succeeded on retry %d.\n",
+                    blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y, i);
                 break;
             }
         }
@@ -1504,14 +1506,16 @@ private:
         index_t offset = value_offset +
             Config::GLOBAL_VALUES_PER_THREAD * get_thread_id_in_load_group();
 
-        if (is_barrier_id(offset) && !is_retry) {
+        bool result = is_barrier_id(offset) ? value >= register_state.reduction_threads_per_value : true;
+
+        if (!result) {
             dprintf("Thread (%d, %d, %d, %d) - Checking barrier counter %f against "
                 "requirement %f\n",
                 blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y,
                 (float)value, (float)register_state.reduction_threads_per_value);
         }
 
-        return is_barrier_id(offset) ? value >= register_state.reduction_threads_per_value : true;
+        return result;
     }
 
     __device__ void set_accumulators_to_zero(ThreadTileAccumulators& accumulators, index_t start)
