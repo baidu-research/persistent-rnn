@@ -191,6 +191,8 @@ int main(int argc, char** argv) {
 
     parser.parse();
 
+    prnn::util::enable_all_logs();
+
     runBenchmark(iterations, layerSize, miniBatcheSize, timesteps, usePersistent, precision);
 }
 
