@@ -140,10 +140,6 @@ public:
                 float, 1, 0>::TileSize::EXPANDED_GRID_TILE_ROWS;
         }
 
-        util::log("RecurrentOperations") << "major " << streamingMultiprocessorVersionMajor
-            << ", minor " << streamingMultiprocessorVersionMinor << ", sms "
-            << streamingMultiprocessorCount << ", max size is " << maxSize << "\n";
-
         return maxSize;
     }
 
@@ -249,7 +245,8 @@ void dispatchForwardPropRecurrent(typename ArchitectureConfig::RealType* activat
         synchronizer.check_for_failure();
 
         if (synchronizer.not_finished()) {
-            util::log("RecurrentOperations") << " forward prop launch failed, restarting at phase "
+            util::log("RecurrentOperations::Detail")
+                << " forward prop launch failed, restarting at phase "
                 << synchronizer.get_current_phase() << ".\n";
             synchronizer.reset_failed_flag();
         }
