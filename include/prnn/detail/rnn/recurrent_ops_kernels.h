@@ -1310,32 +1310,43 @@ private:
 
         index_t offset = register_state.shared_base + base_offset + Config::SHARED_REDUCE_OFFSET;
 
-        UNROLL
-        for(index_t i = 0; i < Config::THREADS_PER_ROW; ++i, offset += stride)
+        RealType value = shared_state.data[offset];
+
+        if(base_offset < Config::BLOCK_TILE_ROWS)
         {
-            if(!is_barrier_thread())
+            if(base_offset < register_state.layer_size)
             {
-                RealType value = 0.0;
-
-                if(base_offset < Config::BLOCK_TILE_ROWS)
-                {
-                    value = shared_state.data[offset];
-
-                    if(base_offset < register_state.layer_size &&
-                        i * Config::VALUES_PER_SHARED_LOAD < register_state.layer_size)
-                    {
-                        dprintf("Thread (%d, %d, %d, %d) - "
-                            "Updating output (reduce) accumulator[%d] %f = "
-                            "current value %f + shared[%d] %f\n",
-                            blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y,
-                            base_offset, (float)(accumulator + value), (float)accumulator,
-                            offset, (float)value);
-                    }
-                }
-
-                accumulator += value;
+                dprintf("Thread (%d, %d, %d, %d) - "
+                    "Updating output (reduce) accumulator[%d] %f = "
+                    "current value %f + shared[%d] %f\n",
+                    blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y,
+                    base_offset, (float)(accumulator + value), (float)accumulator,
+                    offset, (float)value);
             }
         }
+
+        offset += stride;
+
+        UNROLL
+        for(index_t i = 1; i < Config::THREADS_PER_ROW; ++i, offset += stride)
+        {
+            value += shared_state.data[offset];
+
+            if(base_offset < Config::BLOCK_TILE_ROWS)
+            {
+                if(base_offset < register_state.layer_size)
+                {
+                    dprintf("Thread (%d, %d, %d, %d) - "
+                        "Updating output (reduce) accumulator[%d] %f = "
+                        "current value %f + shared[%d] %f\n",
+                        blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y,
+                        base_offset, (float)(accumulator + value), (float)accumulator,
+                        offset, (float)value);
+                }
+            }
+        }
+
+        accumulator = is_barrier_thread() ? accumulator : accumulator + value;
     }
 
     __device__ void initialize_output_accumulator(RegisterState& register_state,
