@@ -30,7 +30,7 @@ class TileSelector
 {
 public:
     //typedef TileConfig<1, 384, 384, 288, 192, 9, 24, direction, T> TileSize;
-    typedef TileConfig<1, 384, 384, 288, 192, 9, 24, direction, T> TileSize;
+    typedef TileConfig<1, 8, 8, 4, 4, 2, 4, direction, T> TileSize;
 
 };
 

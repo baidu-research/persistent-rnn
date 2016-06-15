@@ -6,18 +6,18 @@
 
 #include <prnn/detail/util/atomics.h>
 
-#define DEBUG_RECURRENT_OPS 0
+#define DEBUG_RECURRENT_OPS 1
 #define USE_MEMORY_OPS 1
 #define USE_BARRIER 1
 #define BARRIER_ALWAYS_FAILS 0
 
 #if DEBUG_RECURRENT_OPS
 
-#define dprintf(...) do { if( blockIdx.x == 0 && (blockIdx.y == 0) ) \
+#define dprintf(...) do { if( true ) \
     { std::printf(__VA_ARGS__); } } while(0)
 
 #define t0printf(...) do { if(threadIdx.x == 0 && (threadIdx.y == 0) && \
-    blockIdx.x == 0 && (blockIdx.y == 0)) { std::printf(__VA_ARGS__); } } while(0)
+    true) { std::printf(__VA_ARGS__); } } while(0)
 
 #define UNROLL
 
@@ -290,21 +290,24 @@ public:
         warm_start(register_state, shared_state, weights, data_buffer, accumulators,
             output_accumulators);
 
-        register_state.iteration = parameters.first_iteration + 2;
-        for(; register_state.iteration < register_state.iterations; ++register_state.iteration)
+        if(register_state.barrier_success)
         {
-            t0printf("Thread (%d, %d, %d, %d) - Starting iteration %d.\n",
-                blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y, register_state.iteration);
-
-            perform_iteration(register_state, shared_state, weights, data_buffer, accumulators,
-                output_accumulators);
-
-            if(!register_state.barrier_success)
+            for(; register_state.iteration < register_state.iterations; ++register_state.iteration)
             {
-                t0printf("Thread (%d, %d, %d, %d) - Barrier failed, bailing out of main loop.\n",
-                    blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y);
-                register_state.iteration -= 1;
-                break;
+                t0printf("Thread (%d, %d, %d, %d) - Starting iteration %d.\n",
+                    blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y, register_state.iteration);
+
+                perform_iteration(register_state, shared_state, weights, data_buffer, accumulators,
+                    output_accumulators);
+
+                if(!register_state.barrier_success)
+                {
+                    t0printf("Thread (%d, %d, %d, %d) - Barrier failed, bailing"
+                        " out of main loop.\n",
+                        blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y);
+                    register_state.iteration -= 1;
+                    break;
+                }
             }
         }
 
@@ -361,30 +364,35 @@ public:
         warm_start_back_prop(register_state, shared_state, weights,
             data_buffer, activation_buffer, accumulators, output_accumulators);
 
-        register_state.iteration = parameters.first_iteration + 2;
-        for(; register_state.iteration < register_state.iterations; ++register_state.iteration)
+        if(register_state.barrier_success)
         {
-            t0printf("Thread (%d, %d, %d, %d) - Starting iteration %d.\n",
-                blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y, register_state.iteration);
+            for(; register_state.iteration < register_state.iterations; ++register_state.iteration)
+            {
+                t0printf("Thread (%d, %d, %d, %d) - Starting iteration %d.\n",
+                    blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y, register_state.iteration);
 
-            perform_back_prop_iteration(register_state, shared_state,
-                weights, data_buffer, activation_buffer,
-                accumulators, output_accumulators);
+                perform_back_prop_iteration(register_state, shared_state,
+                    weights, data_buffer, activation_buffer,
+                    accumulators, output_accumulators);
 
-            if (!register_state.barrier_success) {
-                t0printf("Thread (%d, %d, %d, %d) - Barrier failed, bailing out of main loop.\n",
-                    blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y);
-                break;
+                if (!register_state.barrier_success) {
+                    t0printf("Thread (%d, %d, %d, %d) - Barrier failed, bailing out"
+                        " of main loop.\n",
+                        blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y);
+                    break;
+                }
             }
         }
 
-        if (register_state.barrier_success) {
+        if(register_state.barrier_success)
+        {
             clean_up_back_prop(register_state, shared_state,
                 weights, data_buffer, activation_buffer,
                 accumulators, output_accumulators);
         }
 
-        if (!register_state.barrier_success) {
+        if(!register_state.barrier_success)
+        {
             t0printf("Thread (%d, %d, %d, %d) - Barrier failed, bailing out of kernel.\n",
                 blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y);
             synchronizer.set_concurrent_execution_failed();
@@ -559,21 +567,26 @@ private:
         ThreadTileAccumulators& accumulators,
         ThreadTileOutputAccumulators& output_accumulators) {
 
-        t0printf("Thread (%d, %d, %d, %d) - Warm starting iteration %d.\n",
-            blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y,
-            register_state.first_iteration);
+        for(; register_state.iteration < parameters.first_iteration + 2;
+            ++register_state.iteration) {
 
-        perform_iteration(register_state, shared_state, weights, data_buffer,
-            accumulators, output_accumulators, !is_restarted(), true,
-            true, false, false);
+            t0printf("Thread (%d, %d, %d, %d) - Warm starting iteration %d.\n",
+                blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y,
+                register_state.iteration);
 
-        t0printf("Thread (%d, %d, %d, %d) - Warm starting iteration %d.\n",
-            blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y,
-            register_state.first_iteration + 1);
+            perform_iteration(register_state, shared_state, weights, data_buffer,
+                accumulators, output_accumulators, !is_restarted(), true,
+                true, register_state.iteration > parameters.first_iteration, false);
 
-        perform_iteration(register_state, shared_state, weights, data_buffer,
-            accumulators, output_accumulators, !is_restarted(), true,
-            true, true, false);
+            if(!register_state.barrier_success)
+            {
+                register_state.iteration -= 1;
+                t0printf("Thread (%d, %d, %d, %d) - Barrier failed, bailing out of "
+                    "warmup loop at %d.\n",
+                    blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y, register_state.iteration);
+                break;
+            }
+        }
     }
 
     __device__ void warm_start_back_prop(RegisterState& register_state,
@@ -584,21 +597,26 @@ private:
         ThreadTileAccumulators& accumulators,
         ThreadTileOutputAccumulators& output_accumulators) {
 
-        t0printf("Thread (%d, %d, %d, %d) - Warm starting back prop iteration %d.\n",
-            blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y,
-            register_state.first_iteration);
+        for(; register_state.iteration < parameters.first_iteration + 2;
+            ++register_state.iteration) {
 
-        perform_back_prop_iteration(register_state, shared_state, weights, data_buffer,
-            activation_buffer, accumulators, output_accumulators, !is_restarted(), true,
-            true, false, false);
+            t0printf("Thread (%d, %d, %d, %d) - Warm starting back prop iteration %d.\n",
+                blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y,
+                register_state.iteration);
 
-        t0printf("Thread (%d, %d, %d, %d) - Warm starting back prop iteration %d.\n",
-            blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y,
-            register_state.first_iteration + 1);
+            perform_back_prop_iteration(register_state, shared_state, weights, data_buffer,
+                activation_buffer, accumulators, output_accumulators, !is_restarted(), true,
+                true, register_state.iteration > parameters.first_iteration, false);
 
-        perform_back_prop_iteration(register_state, shared_state, weights, data_buffer,
-            activation_buffer, accumulators, output_accumulators, !is_restarted(), true,
-            true, true, false);
+            if(!register_state.barrier_success)
+            {
+                register_state.iteration -= 1;
+                t0printf("Thread (%d, %d, %d, %d) - Barrier failed, bailing out of "
+                    "warmup loop at %d.\n",
+                    blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y, register_state.iteration);
+                break;
+            }
+        }
     }
 
 private:
@@ -662,6 +680,8 @@ private:
     {
         shared_state.data[Config::SHARED_BARRIER_OFFSET] = 0;
         shared_state.data[Config::SHARED_BUFFER_SIZE + Config::SHARED_BARRIER_OFFSET] = 0;
+
+        synchronize_block();
     }
 
 private:
@@ -718,7 +738,7 @@ private:
                 scratch_index, parameters.activation_scratch + scratch_index,
                 local_index, parameters.activations + local_index, (float)value);
 
-            parameters.activation_scratch[scratch_index] = value;
+            atomic_store_relaxed(parameters.activation_scratch[scratch_index], value);
         }
     }
 
@@ -767,7 +787,7 @@ private:
                 deltas_scratch_base + scratch_index,
                 local_index, deltas_base + local_index, (float)value);
 
-            deltas_scratch_base[scratch_index] = value;
+            atomic_store_relaxed(deltas_scratch_base[scratch_index], value);
         }
     }
 
@@ -912,7 +932,7 @@ private:
     }
 
     // noinline so that the uncommon case doesn't polute the main loop
-    __device__ __noinline__ void external_load_input(RegisterState register_state,
+    __device__ __noinline__ void external_load_input(RegisterState& register_state,
         SharedDataStorage& shared_state,
         DataLoadingBuffer& data_buffer) {
 
@@ -1123,7 +1143,7 @@ private:
             {
                 t0printf("Thread (%d, %d, %d, %d) - Barrier succeeded on retry %d.\n",
                     blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y, i);
-                break;
+                return;
             }
         }
         #endif
@@ -1200,7 +1220,7 @@ private:
 
         for(int i = 0; i < Config::VALUES_PER_GLOBAL_LOAD; ++i)
         {
-            if(condition && !is_retry)
+            if(condition)
             {
                 dprintf("Thread (%d, %d, %d, %d) - Loading %s activation[%d] "
                     "(%d block, %d thread, %d io) (%p) = %f (%s)\n",
@@ -1305,7 +1325,8 @@ private:
                         i * Config::VALUES_PER_SHARED_LOAD < register_state.layer_size)
                     {
                         dprintf("Thread (%d, %d, %d, %d) - "
-                            "Updating output (reduce) accumulator[%d] %f = %f + shared[%d] %f\n",
+                            "Updating output (reduce) accumulator[%d] %f = "
+                            "current value %f + shared[%d] %f\n",
                             blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y,
                             base_offset, (float)(accumulator + value), (float)accumulator,
                             offset, (float)value);
@@ -1508,11 +1529,12 @@ private:
 
         bool result = is_barrier_id(offset) ? value >= register_state.reduction_threads_per_value : true;
 
-        if (!result) {
+        if (is_barrier_id(offset)) {
             dprintf("Thread (%d, %d, %d, %d) - Checking barrier counter %f against "
-                "requirement %f\n",
+                "requirement %f (%s)\n",
                 blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y,
-                (float)value, (float)register_state.reduction_threads_per_value);
+                (float)value, (float)register_state.reduction_threads_per_value,
+                result ? "success" : "failed");
         }
 
         return result;
