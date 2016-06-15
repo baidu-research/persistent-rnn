@@ -6,7 +6,7 @@
 
 #include <prnn/detail/util/atomics.h>
 
-#define DEBUG_RECURRENT_OPS 1
+#define DEBUG_RECURRENT_OPS 0
 #define USE_MEMORY_OPS 1
 #define USE_BARRIER 1
 #define BARRIER_ALWAYS_FAILS 0
