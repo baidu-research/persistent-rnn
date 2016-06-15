@@ -9,6 +9,7 @@
 #define DEBUG_RECURRENT_OPS 0
 #define ATOMIC_INCREMENT 1
 #define USE_BARRIER 1
+#define SHOULD_SPIN 1
 #define BARRIER_ALWAYS_FAILS 0
 
 #if DEBUG_RECURRENT_OPS
@@ -218,7 +219,7 @@ private:
         RealType* activation_scratch;
 
     public:
-        index_t shared_base;
+        index_t shared_base; // 1 reg
 
     public:
         bool barrier_success;
@@ -226,28 +227,28 @@ private:
 
     public:
         RealType* back_prop_activation_base_pointer;
-        RealType* input_base_pointer;
+        RealType* input_base_pointer; // 2 regs
 
     public:
-        RealType skip_connection_scale;
-        index_t layer_size;
-        index_t expanded_layer_size;
+        RealType skip_connection_scale; // const
+        index_t layer_size; // const
+        index_t expanded_layer_size; // const
 
     public:
-        index_t input_to_output_offset;
-        index_t scratch_input_to_output_offset;
-        index_t iteration_step;
-        index_t iterations;
+        index_t input_to_output_offset; // const
+        index_t scratch_input_to_output_offset; // const
+        index_t iteration_step; // const
+        index_t iterations; // const
 
     public:
-        index_t iteration;
-        index_t first_iteration;
+        index_t iteration; // 1 reg
+        index_t first_iteration; // const
 
     public:
-        index_t scratch_step_size;
+        index_t scratch_step_size; // const
 
     public:
-        RealType reduction_threads_per_value;
+        RealType reduction_threads_per_value; // const
 
     };
 
@@ -273,9 +274,9 @@ public:
             return;
         }
 
-        DataLoadingBuffer data_buffer;
-        ThreadTileAccumulators accumulators;
-        ThreadTileOutputAccumulators output_accumulators;
+        DataLoadingBuffer data_buffer; // 4 regs
+        ThreadTileAccumulators accumulators; // 9 regs
+        ThreadTileOutputAccumulators output_accumulators; // 3 regs
 
         RegisterState register_state(parameters);
 
@@ -417,6 +418,15 @@ private:
         // 0
         if(stage_one)
         {
+            if(!check_for_critical_barrier_failure(register_state, shared_state))
+            {
+                return;
+            }
+        }
+
+        // 0
+        if(stage_one)
+        {
             load_input(register_state, data_buffer, load_output);
         }
 
@@ -424,6 +434,8 @@ private:
         if(stage_two)
         {
             load_thread_tile_inputs(register_state, shared_state, thread_inputs);
+            initialize_accumulators(accumulators);
+            perform_thread_tile_math(accumulators, weights, thread_inputs);
         }
 
         // 2
@@ -438,15 +450,6 @@ private:
             store_accumulators(register_state, output_accumulators);
         }
 
-        // 0
-        if(stage_one)
-        {
-            if(!check_for_critical_barrier_failure(register_state, shared_state))
-            {
-                return;
-            }
-        }
-
         // 1
         if(stage_two)
         {
@@ -458,8 +461,6 @@ private:
         // 1
         if(stage_two)
         {
-            initialize_accumulators(accumulators);
-            perform_thread_tile_math(accumulators, weights, thread_inputs);
             store_accumulators_to_shared(register_state, shared_state, accumulators);
         }
 
@@ -1008,6 +1009,7 @@ private:
         register_state.barrier_success =
             register_state.iteration < (register_state.first_iteration + 2);
         #else
+        #if SHOULD_SPIN
         if(!register_state.barrier_success)
         {
             DataLoadingBuffer temp_buffer;
@@ -1015,8 +1017,9 @@ private:
 
             spin_on_barrier_failure(temp_state, shared_state, temp_buffer);
             data_buffer = temp_buffer;
-            register_state = temp_state;
+            register_state.barrier_success = temp_state.barrier_success;
         }
+        #endif
         #endif
 
         index_t shared_offset = register_state.shared_base + Config::SHARED_BARRIER_OFFSET;
@@ -1780,9 +1783,11 @@ private:
         for (index_t row = 0;
             row < Config::OUTPUTS_PER_THREAD; row += 1, offset += Config::THREADS_PER_BLOCK) {
 
-            if(offset < register_state.expanded_layer_size)
+            bool condition = offset < register_state.expanded_layer_size;
+
+            #if DEBUG_RECURRENT_OPS
+            if(condition)
             {
-                #if DEBUG_RECURRENT_OPS
                 auto result = atomic_increment_relaxed(output_pointer[offset],
                     accumulators.data[row]);
 
@@ -1792,11 +1797,11 @@ private:
                     (float)(result + accumulators.data[row]),
                     (float)accumulators.data[row],
                     (float)result);
-                #else
-                atomic_increment_reduce_relaxed(output_pointer[offset],
-                    accumulators.data[row]);
-                #endif
             }
+            #else
+            predicated_atomic_increment_reduce_relaxed(output_pointer[offset],
+                accumulators.data[row], condition);
+            #endif
         }
         #endif
     }

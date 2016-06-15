@@ -297,7 +297,7 @@ public:
         "No support for thread tiles that are not evenly divisible by the shared load size yet.");
 
     static_assert(GRID_TILE_ROWS % GLOBAL_VALUES_PER_THREAD == 0,
-        "Grid size must be larger than the minimum load size");
+        "Grid size must be divisible by the minimum load size");
 
     static_assert(GLOBAL_VALUES_PER_THREAD % USEFUL_GLOBAL_VALUES_PER_THREAD == 0,
         "Global values per thread must be evenly divisible by useful values");
