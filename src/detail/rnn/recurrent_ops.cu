@@ -433,11 +433,13 @@ void genericForwardPropRecurrent(
             weights,              false, 1.0,
             reshapedCurrentInput, false);
 
+        apply(nextInput, currentInput, nextInput,
+            matrix::MultiplyAccumulate(handle.skipConnectionScale));
+
         currentInput = nextInput;
 
         apply(currentInput, currentInput, *handle.activationFunction.forwardOperation);
     }
-
 }
 
 }
@@ -696,6 +698,9 @@ void genericBackPropDeltasRecurrent(const matrix::DynamicView& deltas,
             reshapedCurrentDeltas, false
         );
 
+        apply(previousDeltas, currentDeltas, previousDeltas,
+            matrix::MultiplyAccumulate(handle.skipConnectionScale));
+
         currentDeltas = previousDeltas;
 
         currentActivations = slice(activations, {0, 0, timestep},
@@ -704,7 +709,6 @@ void genericBackPropDeltasRecurrent(const matrix::DynamicView& deltas,
         apply(currentDeltas, currentActivations, currentDeltas,
             *handle.activationFunction.reverseOperation);
     }
-
 }
 
 }

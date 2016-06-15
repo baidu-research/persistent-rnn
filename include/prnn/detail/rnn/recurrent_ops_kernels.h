@@ -1361,26 +1361,52 @@ private:
 
         index_t output_offset = base_offset + register_state.shared_base +
             Config::SHARED_OUTPUT_OFFSET;
-        index_t input_offset = base_offset + register_state.shared_base +
-            Config::SHARED_INPUT_OFFSET;
 
         accumulator = 0.0;
 
         if(base_offset < Config::BLOCK_TILE_ROWS && get_block_id_y() == 0)
         {
-            accumulator = shared_state.data[output_offset] +
-                register_state.skip_connection_scale * shared_state.data[input_offset];
+            accumulator = shared_state.data[output_offset];
 
             if(base_offset < register_state.layer_size)
             {
                 dprintf("Thread (%d, %d, %d, %d) - Initializing output accumulator[%d] %f = "
-                    "shared_output[%d] %f + scale %f * shared_input[%d] %f\n",
+                    "shared_output[%d] %f\n",
                     blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y,
                     base_offset, (float)accumulator, output_offset,
-                    (float)shared_state.data[output_offset],
+                    (float)shared_state.data[output_offset]);
+            }
+        }
+
+        index_t global_output_base = get_block_id_x() * Config::BLOCK_TILE_ROWS;
+        index_t global_input_base  = get_block_id_y() * Config::BLOCK_TILE_COLUMNS;
+
+        index_t global_output_offset = base_offset + global_output_base;
+
+        index_t shared_input_offset = global_output_offset - global_input_base;
+
+        index_t input_offset = shared_input_offset + register_state.shared_base +
+            Config::SHARED_INPUT_OFFSET;
+
+        bool input_in_range = shared_input_offset < Config::BLOCK_TILE_COLUMNS &&
+            global_output_offset >= global_input_base;
+
+        if(input_in_range)
+        {
+            auto updated_accumulator = register_state.skip_connection_scale *
+                shared_state.data[input_offset] + accumulator;
+
+            if(shared_input_offset < register_state.layer_size)
+            {
+                dprintf("Thread (%d, %d, %d, %d) - Updating output accumulator[%d] %f = "
+                    "accumultor %f + skip_connection_scale * shared_input[%d] %f\n",
+                    blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y,
+                    base_offset, (float)updated_accumulator, (float) accumulator,
                     register_state.skip_connection_scale, input_offset,
                     (float)shared_state.data[input_offset]);
             }
+
+            accumulator = updated_accumulator;
         }
 
         accumulator = is_barrier_thread() ? 1.0 : accumulator;
