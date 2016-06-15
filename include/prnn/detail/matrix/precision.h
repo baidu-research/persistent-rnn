@@ -96,6 +96,7 @@ public:
 };
 
 typedef std::tuple<SinglePrecision, DoublePrecision> AllPrecisions;
+typedef std::tuple<SinglePrecision> RecurrentPrecisions;
 
 }
 }

@@ -29,7 +29,8 @@ template<RecurrentLayerDirection direction, typename T, size_t sms, size_t smMaj
 class TileSelector
 {
 public:
-    typedef TileConfig<1, 192, 288, 192, 288, 6, 36, direction> TileSize;
+    //typedef TileConfig<1, 192, 192, 288, 192, 9, 24, direction, T> TileSize;
+    typedef TileConfig<1, 8, 8, 4, 4, 2, 4, direction, T> TileSize;
 
 };
 
@@ -39,14 +40,14 @@ template<RecurrentLayerDirection direction, typename T>
 class TileSelector<direction, T, 60, 6>
 {
 public:
-    typedef TileConfig<60, 1820, 1820, 96, 96, 12, 12, direction> TileSize;
+    typedef TileConfig<60, 1820, 1820, 96, 96, 12, 12, direction, T> TileSize;
 };
 
 template<RecurrentLayerDirection direction>
 class TileSelector<direction, float16, 60, 6>
 {
 public:
-    typedef TileConfig<60, 2720, 2720, 352, 352, 22, 22, direction> TileSize;
+    typedef TileConfig<60, 2720, 2720, 352, 352, 22, 22, direction, T> TileSize;
 };
 
 #endif
@@ -57,7 +58,7 @@ template<RecurrentLayerDirection direction, typename T>
 class TileSelector<direction, T, 24, 5>
 {
 public:
-    typedef TileConfig<24, 1152, 1152, 192, 288, 6, 36, direction> TileSize;
+    typedef TileConfig<24, 1152, 1152, 288, 192, 9, 24, direction, T> TileSize;
 };
 
 #endif
@@ -111,6 +112,37 @@ public:
         return maxSize;
     }
 
+    size_t getScratchSize() const
+    {
+        size_t maxSize = 0;
+
+        if(streamingMultiprocessorVersionMajor == 6 && streamingMultiprocessorCount >= 60)
+        {
+            if(precision == matrix::HalfPrecision())
+            {
+                maxSize = TileSelector<prnn::RECURRENT_FORWARD,
+                    float16, 60, 6>::TileSize::EXPANDED_GRID_TILE_ROWS;
+            }
+            else
+            {
+                maxSize = TileSelector<prnn::RECURRENT_FORWARD,
+                    float, 60, 6>::TileSize::EXPANDED_GRID_TILE_ROWS;
+            }
+        }
+        else if(streamingMultiprocessorVersionMajor == 5 && streamingMultiprocessorCount >= 24)
+        {
+            maxSize = TileSelector<prnn::RECURRENT_FORWARD,
+                float, 24, 5>::TileSize::EXPANDED_GRID_TILE_ROWS;
+        }
+        else
+        {
+            maxSize = TileSelector<prnn::RECURRENT_FORWARD,
+                float, 1, 0>::TileSize::EXPANDED_GRID_TILE_ROWS;
+        }
+
+        return maxSize;
+    }
+
 public:
     size_t streamingMultiprocessorVersionMajor;
     size_t streamingMultiprocessorVersionMinor;
@@ -148,6 +180,17 @@ size_t getMaximumSizeRNNForThisGPU(const matrix::Precision& precision)
     return detail::TileSizeSelector(major, minor, smCount, precision).getMaximumSize();
 }
 
+size_t getScratchSizeRNNForThisGPU(const matrix::Precision& precision)
+{
+    int major   = 0;
+    int minor   = 0;
+    int smCount = 0;
+
+    detail::getGPUMajorAndMinorVersion(major, minor, smCount);
+
+    return detail::TileSizeSelector(major, minor, smCount, precision).getScratchSize();
+}
+
 namespace detail
 {
 
@@ -155,7 +198,7 @@ template <typename ArchitectureConfig>
 static index_t* getSynchronizerScratch(typename ArchitectureConfig::RealType* scratch,
     const ArchitectureConfig& archParameters)
 {
-    size_t totalSize = archParameters.activations_per_grid() *
+    size_t totalSize = archParameters.scratch_activations_per_grid() *
         archParameters.handle.miniBatchSize *
         archParameters.handle.timesteps;
 
@@ -175,7 +218,8 @@ void dispatchForwardPropRecurrent(typename ArchitectureConfig::RealType* activat
 
     util::log("RecurrentOperations") << "Launch forward propagation with "
         << archParameters.block_count() << " blocks ("
-        << archParameters.thread_count() << " threads), each handling "
+        << archParameters.threads().x << " x " << archParameters.threads().y
+        << " threads), each handling "
         << archParameters.activations_per_block() << " activations out of "
         << activationCount << " total, mini batch size " << miniBatchSize << ", timesteps "
         << timesteps << ".\n";
@@ -201,7 +245,8 @@ void dispatchForwardPropRecurrent(typename ArchitectureConfig::RealType* activat
         synchronizer.check_for_failure();
 
         if (synchronizer.not_finished()) {
-            util::log("RecurrentOperations") << " forward prop launch failed, restarting at phase "
+            util::log("RecurrentOperations::Detail")
+                << " forward prop launch failed, restarting at phase "
                 << synchronizer.get_current_phase() << ".\n";
             synchronizer.reset_failed_flag();
         }
@@ -309,7 +354,7 @@ void forwardPropRecurrentOverPrecisions(const matrix::DynamicView& activations,
     const matrix::DynamicView& scratch, const RecurrentOpsHandle& handle)
 {
     forwardPropRecurrentOverPrecisions<ActivationFunction>(activations, weights, scratch,
-        handle, prnn::matrix::AllPrecisions());
+        handle, prnn::matrix::RecurrentPrecisions());
 }
 
 template<typename ActivationFunction>
@@ -568,7 +613,7 @@ void backPropDeltasRecurrentOverPrecisions(const matrix::DynamicView& deltas,
     const matrix::DynamicView& scratch, const RecurrentOpsHandle& handle)
 {
     backPropDeltasRecurrentOverPrecisions<ActivationFunction>(deltas, weights, activations,
-        scratch, handle, prnn::matrix::AllPrecisions());
+        scratch, handle, prnn::matrix::RecurrentPrecisions());
 }
 
 template<typename ActivationFunction>
@@ -716,7 +761,7 @@ static matrix::Dimension extendDimensions(const matrix::Dimension& dimensions,
 {
     auto newDimensions = dimensions;
 
-    newDimensions[0] = prnn::rnn::getMaximumSizeRNNForThisGPU(precision);
+    newDimensions[0] = prnn::rnn::getScratchSizeRNNForThisGPU(precision);
     newDimensions[2] += 1;
 
     return newDimensions;
@@ -731,7 +776,6 @@ matrix::Matrix getForwardPropScratch(const RecurrentOpsHandle& handle,
 
     return matrix::Matrix(scratchDimension, precision);
 }
-
 
 matrix::Matrix getBackPropDeltasScratch(const RecurrentOpsHandle& handle,
     const matrix::Precision& precision)

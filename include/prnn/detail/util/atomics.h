@@ -81,6 +81,14 @@ public:
     __device__ static int increment(int& address, const int& increment) {
         return atomicAdd(&address, increment);
     }
+
+    __device__ static int increment(int& address, const int& increment, int predicate) {
+        if (predicate) {
+            return atomicAdd(&address, increment);
+        }
+
+        return 0;
+    }
 };
 
 template <>
@@ -94,6 +102,19 @@ public:
 
         return result;
     }
+
+    __device__ static float increment(float& address, const float& increment, int predicate) {
+        float result = 0.0f;
+        asm("{\n"
+            //"    .reg .u64 address;"
+            //"    cvta.global.u64 address, %0;\n"
+            "   .reg .pred p0;\n\t"
+            "   setp.ne.u32 p0, %3, 0;\n\t"
+            "   atom.global.add.f32 %0, [%1], %2;\n"
+            "}" : "=f"(result) : "l"(&address), "f"(increment), "r"(predicate) : "memory");
+
+        return result;
+    }
 };
 
 template <typename T>
@@ -102,6 +123,10 @@ class AtomicReducer
 public:
     __device__ static void increment(T& address, const T& increment) {
         AtomicAdder<T>::increment(address, increment);
+    }
+
+    __device__ static void increment(T& address, const T& increment, int condition) {
+        AtomicAdder<T>::increment(address, increment, condition);
     }
 };
 
@@ -114,7 +139,17 @@ public:
             //"    .reg .u64 address;"
             //"    cvta.global.u64 address, %0;\n"
             "    red.global.add.f32 [%0], %1;\n"
-            "}" :: "l"(&address), "f"(increment) : "memory");
+            "}" :: "l"(&address), "f"(increment));// : "memory");
+    }
+
+    __device__ static void increment(float& address, const float& increment, int predicate) {
+        asm("{\n"
+            //"    .reg .u64 address;"
+            //"    cvta.global.u64 address, %0;\n"
+            "   .reg .pred p0;\n\t"
+            "   setp.ne.u32 p0, %2, 0;\n\t"
+            "   @p0 red.global.add.f32 [%0], %1;\n"
+            "}" :: "l"(&address), "f"(increment), "r"(predicate));// : "memory");
     }
 };
 
@@ -128,7 +163,18 @@ public:
             //"    cvta.global.u64 address, %0;\n"
             "    red.global.add.s32 [%0], %1;\n"
             //"    st.global.s32 [%0], %1;\n"
-            "}" :: "l"(&address), "r"(increment) : "memory");
+            "}" :: "l"(&address), "r"(increment));// : "memory");
+    }
+
+    __device__ static void increment(int32_t& address, const int32_t& increment, int predicate) {
+        asm("{\n"
+            //"    .reg .u64 address;"
+            //"    cvta.global.u64 address, %0;\n"
+            "   .reg .pred p0;\n\t"
+            "   setp.ne.u32 p0, %2, 0;\n\t"
+            "   @p0 red.global.add.s32 [%0], %1;\n"
+            //"    st.global.s32 [%0], %1;\n"
+            "}" :: "l"(&address), "r"(increment), "r"(predicate));// : "memory");
     }
 };
 
@@ -140,6 +186,12 @@ __device__ inline T atomic_increment_relaxed(T& value, const T& increment) {
 template <typename T>
 __device__ inline void atomic_increment_reduce_relaxed(T& value, const T& increment) {
     return AtomicReducer<T>::increment(value, increment);
+}
+
+template <typename T>
+__device__ inline void predicated_atomic_increment_reduce_relaxed(T& value, const T& increment,
+    int predicate) {
+    return AtomicReducer<T>::increment(value, increment, predicate);
 }
 
 __device__ inline void atomic_fence_release() {

@@ -16,6 +16,10 @@ typedef int32_t index_t;
 typedef prnn::types::float16 float16;
 typedef prnn::RecurrentLayerDirection RecurrentLayerDirection;
 
+__device__ constexpr index_t align(index_t address, index_t alignment) {
+    return address % alignment == 0 ? address : address + alignment - address % alignment;
+}
+
 template<
     index_t StreamingMultiprocessors = 24,
     index_t GridTileRows = 1088,
@@ -24,7 +28,8 @@ template<
     index_t BlockTileColumns = 224,
     index_t ThreadTileRows = 14,
     index_t ThreadTileColumns = 14,
-    int Direction = prnn::RECURRENT_FORWARD>
+    int Direction = prnn::RECURRENT_FORWARD,
+    typename RealType = float>
 class TileConfig {
 public:
     enum {
@@ -71,6 +76,25 @@ public:
     enum {
         BLOCKS_PER_SM = (BLOCKS_PER_GRID + STREAMING_MULTIPROCESSORS - 1) /
             STREAMING_MULTIPROCESSORS
+    };
+
+    enum {
+        CACHE_LINE_SIZE = 32
+    };
+
+    enum {
+        VALUES_PER_CACHE_LINE = CACHE_LINE_SIZE / sizeof(RealType)
+    };
+
+    enum {
+        USABLE_VALUES_PER_CACHE_LINE = VALUES_PER_CACHE_LINE / 2
+    };
+
+    enum {
+        EXPANDED_GRID_TILE_ROWS = GRID_TILE_ROWS * 2,
+        EXPANDED_GRID_TILE_COLUMNS = GRID_TILE_COLUMNS * 2,
+        EXPANDED_BLOCK_TILE_ROWS = BLOCK_TILE_ROWS * 2,
+        EXPANDED_BLOCK_TILE_COLUMNS = BLOCK_TILE_COLUMNS * 2
     };
 
     enum {
@@ -203,6 +227,13 @@ public:
     };
 
     enum {
+        EXPANDED_GRID_TILE_ROWS     = Config::EXPANDED_GRID_TILE_ROWS,
+        EXPANDED_GRID_TILE_COLUMNS  = Config::EXPANDED_GRID_TILE_COLUMNS,
+        EXPANDED_BLOCK_TILE_ROWS    = Config::EXPANDED_BLOCK_TILE_ROWS,
+        EXPANDED_BLOCK_TILE_COLUMNS = Config::EXPANDED_BLOCK_TILE_COLUMNS
+    };
+
+    enum {
         BLOCK_TILE_ROWS    = Config::BLOCK_TILE_ROWS,
         BLOCK_TILE_COLUMNS = Config::BLOCK_TILE_COLUMNS
     };
@@ -231,7 +262,15 @@ public:
     };
 
     enum {
-        THREADS_PER_BLOCK = Config::THREADS_PER_BLOCK
+        CACHE_LINE_SIZE = Config::CACHE_LINE_SIZE,
+        VALUES_PER_CACHE_LINE = Config::VALUES_PER_CACHE_LINE,
+        USABLE_VALUES_PER_CACHE_LINE = Config::USABLE_VALUES_PER_CACHE_LINE,
+        CACHE_LINE_USAGE = VALUES_PER_CACHE_LINE / USABLE_VALUES_PER_CACHE_LINE
+    };
+
+    enum {
+        THREADS_PER_BLOCK = Config::THREADS_PER_BLOCK,
+        COMPRESSED_THREADS_PER_BLOCK = THREADS_PER_BLOCK / CACHE_LINE_USAGE
     };
 
     enum {
@@ -244,22 +283,56 @@ public:
     };
 
     enum {
-        SHARED_BUFFER_SIZE = get_next_power_of_two(Config::BLOCK_TILE_COLUMNS +
-            Config::BLOCK_TILE_ROWS)
+        BARRIER_STATUS_SIZE = 1
     };
 
     enum {
-        GLOBAL_VALUES_PER_THREAD = (BLOCK_TILE_ROWS + BLOCK_TILE_COLUMNS + THREADS_PER_BLOCK - 1) /
-            THREADS_PER_BLOCK
+        UNALIGNED_GLOBAL_VALUES_PER_THREAD = (BLOCK_TILE_ROWS + EXPANDED_BLOCK_TILE_COLUMNS +
+            THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK,
+        GLOBAL_VALUES_PER_THREAD = align(UNALIGNED_GLOBAL_VALUES_PER_THREAD, VALUES_PER_SHARED_LOAD),
+        USEFUL_GLOBAL_VALUES_PER_THREAD = GLOBAL_VALUES_PER_THREAD / CACHE_LINE_USAGE
+    };
+
+    static_assert(THREAD_TILE_COLUMN_SEGMENT_REMAINDER == 0,
+        "No support for thread tiles that are not evenly divisible by the shared load size yet.");
+
+    static_assert(GRID_TILE_ROWS % GLOBAL_VALUES_PER_THREAD == 0,
+        "Grid size must be divisible by the minimum load size");
+
+    static_assert(GLOBAL_VALUES_PER_THREAD % USEFUL_GLOBAL_VALUES_PER_THREAD == 0,
+        "Global values per thread must be evenly divisible by useful values");
+
+    enum {
+        SHARED_INPUT_BUFFER_SIZE = EXPANDED_BLOCK_TILE_COLUMNS,
+        SHARED_OUTPUT_BUFFER_SIZE = EXPANDED_BLOCK_TILE_ROWS
     };
 
     enum {
-        VALUES_PER_SHARED_STORE = get_min((16 + sizeof(RealType) - 1) / sizeof(RealType),
+        SHARED_REDUCE_OFFSET = SHARED_INPUT_BUFFER_SIZE + SHARED_OUTPUT_BUFFER_SIZE,
+        SHARED_OUTPUT_OFFSET = SHARED_INPUT_BUFFER_SIZE,
+        SHARED_INPUT_OFFSET = 0,
+        SHARED_BARRIER_OFFSET = SHARED_INPUT_BUFFER_SIZE + SHARED_OUTPUT_BUFFER_SIZE +
+            THREADS_PER_ROW * BLOCK_TILE_ROWS
+    };
+
+    enum {
+        SHARED_BUFFER_SIZE = get_next_power_of_two(SHARED_BARRIER_OFFSET + 1)
+    };
+
+    enum {
+        VALUES_PER_INPUT_SHARED_STORE = get_min((16 + sizeof(RealType) - 1) / sizeof(RealType),
+            USEFUL_GLOBAL_VALUES_PER_THREAD),
+        VALUES_PER_OUTPUT_SHARED_STORE = get_min((16 + sizeof(RealType) - 1) / sizeof(RealType),
             GLOBAL_VALUES_PER_THREAD)
     };
 
     enum {
-        VALUES_PER_GLOBAL_LOAD = get_min(GLOBAL_VALUES_PER_THREAD, VALUES_PER_SHARED_LOAD)
+        VALUES_PER_GLOBAL_LOAD = get_min(GLOBAL_VALUES_PER_THREAD,
+            (16 + sizeof(RealType) - 1) / sizeof(RealType)),
+        VALUES_PER_GLOBAL_STORE = get_min((16 + sizeof(RealType) - 1) / sizeof(RealType),
+            USEFUL_GLOBAL_VALUES_PER_THREAD),
+        VALUES_PER_ACTIVATION_LOAD = get_min(USEFUL_GLOBAL_VALUES_PER_THREAD,
+            (16 + sizeof(RealType) - 1) / sizeof(RealType))
     };
 
     enum {
@@ -268,12 +341,18 @@ public:
     };
 
     enum {
-        VALUES_PER_OUTPUT_SHARED_LOAD = VALUES_PER_WEIGHT_LOAD
+        VALUES_PER_OUTPUT_SHARED_LOAD = evenly_divisible(THREAD_TILE_ROWS,
+            (16 + sizeof(RealType) - 1) / sizeof(RealType))
     };
 
     enum {
-        INPUT_LOAD_GROUP_SIZE  = BLOCK_TILE_COLUMNS / GLOBAL_VALUES_PER_THREAD,
+        INPUT_LOAD_GROUP_SIZE  = EXPANDED_BLOCK_TILE_COLUMNS / GLOBAL_VALUES_PER_THREAD,
         OUTPUT_LOAD_GROUP_SIZE = BLOCK_TILE_ROWS / GLOBAL_VALUES_PER_THREAD
+    };
+
+    enum {
+        OUTPUTS_PER_THREAD = (EXPANDED_BLOCK_TILE_ROWS + THREADS_PER_BLOCK - 1) /
+            THREADS_PER_BLOCK
     };
 
     static_assert(INPUT_LOAD_GROUP_SIZE + OUTPUT_LOAD_GROUP_SIZE <= THREADS_PER_BLOCK,
@@ -288,12 +367,17 @@ public:
     };
 
     enum {
+        SHARED_REDUCE_STORE_VALUES_PER_THREAD = evenly_divisible(THREAD_TILE_ROWS,
+            (16 + sizeof(RealType) - 1) / sizeof(RealType))
+    };
+
+    enum {
         FIXED_POINT_BITS = sizeof(RealType) * 8
     };
 
     enum {
         THREADS_PER_GLOBAL_REDUCTION = ((GRID_TILE_COLUMNS + BLOCK_TILE_COLUMNS - 1) /
-            BLOCK_TILE_COLUMNS) * THREADS_PER_ROW
+            BLOCK_TILE_COLUMNS)
     };
 
     enum {
@@ -311,6 +395,10 @@ public:
 
     enum {
         DIRECTION = Config::DIRECTION
+    };
+
+    enum {
+        BARRIER_WAIT_COUNT = 3333 // about 10us
     };
 
 public:
@@ -340,6 +428,15 @@ public:
     #if defined(__CUDACC__)
     __align__(16)
     #endif
+    ThreadTileOutputAccumulators {
+    public:
+        RealType data[OUTPUTS_PER_THREAD];
+    };
+
+    class
+    #if defined(__CUDACC__)
+    __align__(16)
+    #endif
     ThreadTileInputs {
     public:
         RealType data[THREAD_TILE_COLUMNS];
@@ -358,10 +455,24 @@ public:
     #if defined(__CUDACC__)
     __align__(16)
     #endif
+    ActivationLoadingBuffer {
+    public:
+        RealType data[USEFUL_GLOBAL_VALUES_PER_THREAD];
+    };
+
+    class
+    #if defined(__CUDACC__)
+    __align__(16)
+    #endif
     SharedDataStorage
     {
     public:
         RealType data[2 * SHARED_BUFFER_SIZE];
+    };
+
+    union ActivationAccessType {
+        typename GetAlignedType<sizeof(RealType)*VALUES_PER_ACTIVATION_LOAD>::type aligned_data;
+        RealType data[VALUES_PER_ACTIVATION_LOAD];
     };
 
     union GlobalAccessType {
@@ -379,9 +490,25 @@ public:
         RealType data[VALUES_PER_OUTPUT_SHARED_LOAD];
     };
 
-    union SharedStoreType {
-        typename GetAlignedType<sizeof(RealType)*VALUES_PER_SHARED_STORE>::type aligned_data;
-        RealType data[VALUES_PER_SHARED_STORE];
+    union GlobalStoreType {
+        typename GetAlignedType<sizeof(RealType)*VALUES_PER_GLOBAL_STORE>::type aligned_data;
+        RealType data[VALUES_PER_GLOBAL_STORE];
+    };
+
+    union SharedInputStoreType {
+        typename GetAlignedType<sizeof(RealType)*VALUES_PER_INPUT_SHARED_STORE>::type aligned_data;
+        RealType data[VALUES_PER_INPUT_SHARED_STORE];
+    };
+
+    union SharedOutputStoreType {
+        typename GetAlignedType<sizeof(RealType)*VALUES_PER_OUTPUT_SHARED_STORE>::type aligned_data;
+        RealType data[VALUES_PER_OUTPUT_SHARED_STORE];
+    };
+
+    union SharedAccumulatorStoreType {
+        typename GetAlignedType<sizeof(RealType)*SHARED_REDUCE_STORE_VALUES_PER_THREAD>::type
+            aligned_data;
+        RealType data[SHARED_REDUCE_STORE_VALUES_PER_THREAD];
     };
 
     union WeightAccessType {
@@ -463,7 +590,7 @@ public:
     }
 
     dim3 threads() const {
-        return dim3(TileParameters::THREADS_PER_ROW, TileParameters::THREADS_PER_COLUMN, 1);
+        return dim3(TileParameters::THREADS_PER_COLUMN, TileParameters::THREADS_PER_ROW, 1);
     }
 
     index_t thread_count() const {
@@ -476,6 +603,10 @@ public:
 
     index_t activations_per_grid() const {
         return TileParameters::GRID_TILE_ROWS;
+    }
+
+    index_t scratch_activations_per_grid() const {
+        return TileParameters::EXPANDED_GRID_TILE_ROWS;
     }
 
 public:
