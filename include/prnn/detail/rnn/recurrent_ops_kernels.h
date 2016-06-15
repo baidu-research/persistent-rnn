@@ -14,11 +14,11 @@
 
 #if DEBUG_RECURRENT_OPS
 
-#define dprintf(...) do { if( true ) \
+#define dprintf(...) do { if( blockIdx.x == 1 && blockIdx.y == 0 ) \
     { std::printf(__VA_ARGS__); } } while(0)
 
 #define t0printf(...) do { if(threadIdx.x == 0 && (threadIdx.y == 0) && \
-    true) { std::printf(__VA_ARGS__); } } while(0)
+    blockIdx.x == 1 && blockIdx.y == 0) { std::printf(__VA_ARGS__); } } while(0)
 
 #define UNROLL
 
@@ -394,8 +394,8 @@ public:
 
         if(!register_state.barrier_success)
         {
-            t0printf("Thread (%d, %d, %d, %d) - Barrier failed, bailing out of kernel.\n",
-                blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y);
+            printf("Thread (%d, %d, %d, %d) - Barrier failed, bailing out of kernel at %d.\n",
+                blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y, (register_state.iteration - 1));
             synchronizer.set_concurrent_execution_failed();
             synchronizer.set_phase(register_state.iteration - 1);
         }
@@ -1242,7 +1242,7 @@ private:
     __device__ void predicated_load_back_prop_activation_vector(RegisterState& register_state,
         RealType& value, index_t value_offset)
     {
-        index_t  block_offset = get_block_id_x() * Config::BLOCK_TILE_COLUMNS;
+        index_t  block_offset = get_block_id_y() * Config::BLOCK_TILE_COLUMNS;
         index_t thread_offset = get_thread_id_in_load_group() *
             Config::USEFUL_GLOBAL_VALUES_PER_THREAD;
 
@@ -1366,7 +1366,7 @@ private:
 
         accumulator = 0.0;
 
-        if(base_offset < Config::BLOCK_TILE_ROWS && get_block_id_x() == 0)
+        if(base_offset < Config::BLOCK_TILE_ROWS && get_block_id_y() == 0)
         {
             accumulator = shared_state.data[output_offset] +
                 register_state.skip_connection_scale * shared_state.data[input_offset];
