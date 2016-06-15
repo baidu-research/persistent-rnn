@@ -114,7 +114,7 @@ public:
             //"    .reg .u64 address;"
             //"    cvta.global.u64 address, %0;\n"
             "    red.global.add.f32 [%0], %1;\n"
-            "}" :: "l"(&address), "f"(increment) : "memory");
+            "}" :: "l"(&address), "f"(increment) );
     }
 };
 
@@ -128,7 +128,7 @@ public:
             //"    cvta.global.u64 address, %0;\n"
             "    red.global.add.s32 [%0], %1;\n"
             //"    st.global.s32 [%0], %1;\n"
-            "}" :: "l"(&address), "r"(increment) : "memory");
+            "}" :: "l"(&address), "r"(increment) );
     }
 };
 
