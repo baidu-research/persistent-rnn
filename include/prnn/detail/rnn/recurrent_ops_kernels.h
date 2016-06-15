@@ -7,7 +7,7 @@
 #include <prnn/detail/util/atomics.h>
 
 #define DEBUG_RECURRENT_OPS 0
-#define USE_MEMORY_OPS 1
+#define ATOMIC_INCREMENT 1
 #define USE_BARRIER 1
 #define BARRIER_ALWAYS_FAILS 0
 
@@ -1775,6 +1775,7 @@ private:
         RegisterState& register_state,
         ThreadTileOutputAccumulators& accumulators, index_t offset) {
 
+        #if ATOMIC_INCREMENT
         UNROLL
         for (index_t row = 0;
             row < Config::OUTPUTS_PER_THREAD; row += 1, offset += Config::THREADS_PER_BLOCK) {
@@ -1797,7 +1798,7 @@ private:
                 #endif
             }
         }
-
+        #endif
     }
 
     __device__ RealType* get_output_pointer(RegisterState& register_state) {
