@@ -157,7 +157,7 @@ void TestSimpleRecurrentOpsGradientCheck(prnn::RecurrentLayerDirection direction
     samples = std::min(window_rows * window_columns, samples);
 
     prnn::RecurrentOpsHandle handle(layer_size, mini_batch, timesteps,
-        prnn::RecurrentRectifiedLinear(), direction);
+        prnn::RecurrentRectifiedLinear(), direction, true, 0.5);
 
     auto weights = zeros({layer_size, layer_size}, precision);
     auto weights_slice = slice(weights, {0, 0}, {window_rows, window_columns});
@@ -354,7 +354,7 @@ int main(int argc, char** argv)
 {
     prnn::util::enable_all_logs();
 
- //   RunTest("Simple Recurrent Ops Test",            TestSimpleRecurrentOps              );
+    RunTest("Simple Recurrent Ops Test",            TestSimpleRecurrentOps              );
     RunTest("Recurrent Forward Ops Gradient Check", TestRecurrentOpsGradientCheck       );
     //RunTest("Recurrent Reverse Ops Gradient Check", TestReverseRecurrentOpsGradientCheck);
 

@@ -25,6 +25,7 @@ public:
         Add,
         Subtract,
         Multiply,
+        MultiplyAccumulate,
         Divide,
         Log,
         Exp,
@@ -269,6 +270,32 @@ public:
     CUDA_DECORATOR T operator()(const T& r) const
     {
         return T(_value) * r;
+    }
+
+private:
+    double _value;
+
+};
+
+class MultiplyAccumulate : public Operation
+{
+public:
+    CUDA_DECORATOR MultiplyAccumulate() : Operation(Operation::MultiplyAccumulate), _value(0.0)
+    {
+
+    }
+
+    CUDA_DECORATOR MultiplyAccumulate(double d)
+    : Operation(Operation::MultiplyAccumulate), _value(d)
+    {
+
+    }
+
+public:
+    template<typename T>
+    CUDA_DECORATOR T operator()(const T& l, const T& r) const
+    {
+        return T(_value) * l + r;
     }
 
 private:
@@ -752,12 +779,12 @@ public:
 typedef std::tuple<RectifiedLinear, Tanh> AllRecurrentForwardOps;
 typedef std::tuple<RectifiedLinearDerivative, TanhDerivative> AllRecurrentBackwardOps;
 
-typedef std::tuple<Add, Subtract, Multiply, Divide, Log, Exp, Pow, Abs, Sqrt, RectifiedLinear,
-                   RectifiedLinearDerivative, Sigmoid, SigmoidDerivative, Negate, Maximum,
-                   Minimum, Equal, LessThan, NotEqual, Fill, Square, SquareAndScale, Inverse
-                   > AllOperations;
+typedef std::tuple<Add, Subtract, Multiply, MultiplyAccumulate, Divide, Log, Exp, Pow, Abs, Sqrt,
+                   RectifiedLinear, RectifiedLinearDerivative, Sigmoid, SigmoidDerivative, Negate,
+                   Maximum, Minimum, Equal, LessThan, NotEqual, Fill, Square, SquareAndScale,
+                   Inverse> AllOperations;
 
-typedef std::tuple<Add, Subtract, Multiply, Divide, Maximum, Minimum,
+typedef std::tuple<Add, Subtract, Multiply, MultiplyAccumulate, Divide, Maximum, Minimum,
                    Equal, LessThan, NotEqual, CopyRight, RectifiedLinearDerivative,
                    TanhDerivative> AllBinaryOperations;
 
