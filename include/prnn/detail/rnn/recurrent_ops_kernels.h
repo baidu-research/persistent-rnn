@@ -500,6 +500,15 @@ private:
         // 0
         if(stage_one)
         {
+            if(!check_for_critical_barrier_failure(register_state, shared_state))
+            {
+                return;
+            }
+        }
+
+        // 0
+        if(stage_one)
+        {
             load_input(register_state, data_buffer, load_output);
             load_back_prop_activations(register_state, activation_buffer);
         }
@@ -508,6 +517,8 @@ private:
         if(stage_two)
         {
             load_thread_tile_inputs(register_state, shared_state, thread_inputs);
+            initialize_accumulators(accumulators);
+            perform_thread_tile_math(accumulators, weights, thread_inputs);
         }
 
         // 2
@@ -522,15 +533,6 @@ private:
             store_accumulators_back_prop(register_state, output_accumulators);
         }
 
-        // 0
-        if(stage_one)
-        {
-            if(!check_for_critical_barrier_failure(register_state, shared_state))
-            {
-                return;
-            }
-        }
-
         // 1
         if(stage_two)
         {
@@ -542,8 +544,6 @@ private:
         // 1
         if(stage_two)
         {
-            initialize_accumulators(accumulators);
-            perform_thread_tile_math(accumulators, weights, thread_inputs);
             store_accumulators_to_shared(register_state, shared_state, accumulators);
         }
 
