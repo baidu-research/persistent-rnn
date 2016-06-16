@@ -354,7 +354,7 @@ int main(int argc, char** argv)
 {
     prnn::util::enable_all_logs();
 
-    RunTest("Simple Recurrent Ops Test",            TestSimpleRecurrentOps              );
+    //RunTest("Simple Recurrent Ops Test",            TestSimpleRecurrentOps              );
     RunTest("Recurrent Forward Ops Gradient Check", TestRecurrentOpsGradientCheck       );
     //RunTest("Recurrent Reverse Ops Gradient Check", TestReverseRecurrentOpsGradientCheck);
 

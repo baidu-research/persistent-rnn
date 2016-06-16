@@ -72,6 +72,12 @@ public:
 
         return updated_value;
     }
+
+    __device__ static T increment(T& address, const T& value, int predicate) {
+        if (predicate) {
+            return increment(address, value);
+        }
+    }
 };
 
 template <>
@@ -110,7 +116,7 @@ public:
             //"    cvta.global.u64 address, %0;\n"
             "   .reg .pred p0;\n\t"
             "   setp.ne.u32 p0, %3, 0;\n\t"
-            "   atom.global.add.f32 %0, [%1], %2;\n"
+            "   @p0 atom.global.add.f32 %0, [%1], %2;\n"
             "}" : "=f"(result) : "l"(&address), "f"(increment), "r"(predicate) : "memory");
 
         return result;
@@ -286,7 +292,7 @@ public:
         }
     }
 };
-/*
+
 template <>
 class L2SizedCacheAccessor<8>
 {
@@ -313,7 +319,7 @@ public:
             "}\n" :: "r"(predicate), "l"(result), "f"(value.x), "f"(value.y) : "memory");
     }
 };
-*/
+
 template <>
 class L2SizedCacheAccessor<12>
 {

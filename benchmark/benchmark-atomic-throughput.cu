@@ -18,9 +18,10 @@ __global__ void performAtomicsKernel(Type* array, size_t size, size_t collisions
     size_t id = threadIdx.x + (blockIdx.x / collisions) * blockDim.x;
     size_t gridSize = gridDim.x * blockDim.x;
 
-    for(size_t i = id; i < size; i += gridSize)
+    for(size_t i = 2*id; 2*i < size; i += 2*gridSize)
     {
-        atomicAdd(array + i, 1);
+        atomicAdd(array + 2*i, 1);
+        atomicAdd(array + 2*i + 1, 1);
     }
 }
 
@@ -55,7 +56,7 @@ void benchmarkAtomics(size_t size, size_t iterations, size_t collisions)
 
     timer.stop();
 
-    double totalBytes = iterations * size * sizeof(int);
+    double totalBytes = 2 * iterations * size * sizeof(int);
     double gigaBytesPerSecond = totalBytes / (timer.seconds() * 1.0e9);
 
     std::cout << "32-bit Atomic Increment Throughput " << gigaBytesPerSecond << " GB/s\n";

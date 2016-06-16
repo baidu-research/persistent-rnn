@@ -351,7 +351,7 @@ public:
     };
 
     enum {
-        OUTPUTS_PER_THREAD = (EXPANDED_BLOCK_TILE_ROWS + THREADS_PER_BLOCK - 1) /
+        OUTPUTS_PER_THREAD = (BLOCK_TILE_ROWS + THREADS_PER_BLOCK - 1) /
             THREADS_PER_BLOCK
     };
 
