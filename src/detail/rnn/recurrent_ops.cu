@@ -58,7 +58,7 @@ template<RecurrentLayerDirection direction, typename T>
 class TileSelector<direction, T, 24, 5>
 {
 public:
-    typedef TileConfig<24, 1152, 1152, 288, 192, 9, 24, direction, T> TileSize;
+    typedef TileConfig<24, 1152, 1152, 192, 288, 6, 36, direction, T> TileSize;
 };
 
 #endif
