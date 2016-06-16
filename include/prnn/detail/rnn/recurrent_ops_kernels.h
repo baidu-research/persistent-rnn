@@ -437,8 +437,6 @@ private:
         if(stage_two)
         {
             load_thread_tile_inputs(register_state, shared_state, thread_inputs);
-            initialize_accumulators(accumulators);
-            perform_thread_tile_math(accumulators, weights, thread_inputs);
         }
 
         // 2
@@ -464,6 +462,8 @@ private:
         // 1
         if(stage_two)
         {
+            initialize_accumulators(accumulators);
+            perform_thread_tile_math(accumulators, weights, thread_inputs);
             store_accumulators_to_shared(register_state, shared_state, accumulators);
         }
 
