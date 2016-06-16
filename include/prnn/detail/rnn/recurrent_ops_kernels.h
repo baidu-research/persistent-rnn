@@ -1307,7 +1307,7 @@ private:
         SharedDataStorage& shared_state,
         RealType& accumulator, index_t value_offset)
     {
-        #if REDUCE_ACCUMULATOR
+        #if REDUCE_ACCUMULATORS
         index_t stride = Config::BLOCK_TILE_ROWS;
 
         index_t base_offset = get_compressed_input_linear_thread_id() +
