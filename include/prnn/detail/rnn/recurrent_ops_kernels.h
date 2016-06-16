@@ -6,7 +6,7 @@
 
 #include <prnn/detail/util/atomics.h>
 
-#define DEBUG_RECURRENT_OPS 0
+#define DEBUG_RECURRENT_OPS 1
 #define ATOMIC_INCREMENT 1
 #define USE_BARRIER 1
 #define SHOULD_SPIN 1
@@ -17,11 +17,11 @@
 
 #if DEBUG_RECURRENT_OPS
 
-#define dprintf(...) do { if( blockIdx.x == 1 && blockIdx.y == 0 ) \
+#define dprintf(...) do { if( blockIdx.x == 0 && blockIdx.y == 0 ) \
     { std::printf(__VA_ARGS__); } } while(0)
 
 #define t0printf(...) do { if(threadIdx.x == 0 && (threadIdx.y == 0) && \
-    blockIdx.x == 1 && blockIdx.y == 0) { std::printf(__VA_ARGS__); } } while(0)
+    blockIdx.x == 0 && blockIdx.y == 0) { std::printf(__VA_ARGS__); } } while(0)
 
 #define UNROLL
 
@@ -1403,7 +1403,7 @@ private:
             if(shared_input_offset < register_state.layer_size)
             {
                 dprintf("Thread (%d, %d, %d, %d) - Updating output accumulator[%d] %f = "
-                    "accumultor %f + skip_connection_scale * shared_input[%d] %f\n",
+                    "accumultor %f + skip_connection_scale %f * shared_input[%d] %f\n",
                     blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y,
                     base_offset, (float)updated_accumulator, (float) accumulator,
                     register_state.skip_connection_scale, input_offset,
@@ -1786,20 +1786,16 @@ private:
         index_t bufferOffset;
         #endif
 
-        RealType* outputPointer = outputBuffer;
-
-        atomic_increment(outputPointer, register_state, accumulators, offset, bufferOffset);
+        atomic_increment(outputBuffer, register_state, accumulators, offset, bufferOffset);
     }
 
     __device__ void store_accumulators_back_prop(RegisterState& register_state,
         ThreadTileOutputAccumulators& accumulators)
     {
         #if REDUCE_ADDRESS_MATH
-        RealType* outputBuffer = register_state.activation_scratch;
+        RealType* outputBuffer = register_state.activation_scratch - register_state.scratch_input_to_output_offset;
 
-        index_t bufferOffset =
-            - register_state.scratch_input_to_output_offset +
-            2 * Config::EXPANDED_GRID_TILE_ROWS;
+        index_t bufferOffset = 2 * Config::EXPANDED_GRID_TILE_ROWS;
 
         index_t blockId = blockIdx.x;
 
@@ -1816,9 +1812,7 @@ private:
         index_t bufferOffset = 0;
         #endif
 
-        RealType* outputPointer = outputBuffer;
-
-        atomic_increment(outputPointer, register_state, accumulators, offset, bufferOffset);
+        atomic_increment(outputBuffer, register_state, accumulators, offset, bufferOffset);
     }
 
     __device__ void atomic_increment(RealType* output_pointer,
