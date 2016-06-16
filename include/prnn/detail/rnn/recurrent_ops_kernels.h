@@ -6,7 +6,7 @@
 
 #include <prnn/detail/util/atomics.h>
 
-#define DEBUG_RECURRENT_OPS 1
+#define DEBUG_RECURRENT_OPS 0
 #define ATOMIC_INCREMENT 1
 #define USE_BARRIER 1
 #define SHOULD_SPIN 1
@@ -1793,9 +1793,10 @@ private:
         ThreadTileOutputAccumulators& accumulators)
     {
         #if REDUCE_ADDRESS_MATH
-        RealType* outputBuffer = register_state.activation_scratch - register_state.scratch_input_to_output_offset;
+        RealType* outputBuffer = register_state.activation_scratch;
 
-        index_t bufferOffset = 2 * Config::EXPANDED_GRID_TILE_ROWS;
+        index_t bufferOffset = 2 * Config::EXPANDED_GRID_TILE_ROWS -
+            register_state.scratch_input_to_output_offset;
 
         index_t blockId = blockIdx.x;
 
