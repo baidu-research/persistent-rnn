@@ -418,6 +418,15 @@ private:
         // 0
         if(stage_one)
         {
+            if(!check_for_critical_barrier_failure(register_state, shared_state))
+            {
+                return;
+            }
+        }
+
+        // 0
+        if(stage_one)
+        {
             load_input(register_state, data_buffer, load_output);
         }
 
@@ -437,15 +446,6 @@ private:
         if(stage_three)
         {
             store_accumulators(register_state, output_accumulators);
-        }
-
-        // 0
-        if(stage_one)
-        {
-            if(!check_for_critical_barrier_failure(register_state, shared_state))
-            {
-                return;
-            }
         }
 
         // 1
@@ -901,7 +901,6 @@ private:
         SharedDataStorage& shared_state,
         DataLoadingBuffer& data_buffer, bool save_input)
     {
-
         compress_data_buffer(data_buffer);
 
         apply_nonlinearity(data_buffer);
@@ -919,7 +918,6 @@ private:
         DataLoadingBuffer& data_buffer, ActivationLoadingBuffer& activation_buffer,
         bool save_input)
     {
-
         compress_data_buffer(data_buffer);
 
         apply_back_prop_nonlinearity(data_buffer, activation_buffer);
