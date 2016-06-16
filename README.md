@@ -25,7 +25,7 @@ Avoiding reloading layer weights multiple times makes persistent kernels very ef
   * 1152 for TitanX/M40
   * 1460 for Geforce 1080
   * 1880 for GP100
-   * 2720 in 16-bit floating point
+    * 2720 in 16-bit floating point
  * Only the following GPUs are supported (TitanX/M40, Geforce 1080 GTX, GP100)
   * Support for new GPUs can be enabled by determining good tile sizes and adding them to recurrent_ops.cu .
  * The layer size must be a multiple of 4.
