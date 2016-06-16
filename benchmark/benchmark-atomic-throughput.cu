@@ -20,7 +20,8 @@ __global__ void performAtomicsKernel(Type* array, size_t size, size_t collisions
 
     for(size_t i = id; i < size; i += gridSize)
     {
-        atomicAdd(array + i, 1);
+        atomicAdd(array + 2*i, 1);
+        atomicAdd(array + 2*i + 1, 1);
     }
 }
 
