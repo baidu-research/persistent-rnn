@@ -10,6 +10,9 @@
 #define ATOMIC_INCREMENT 1
 #define USE_BARRIER 1
 #define SHOULD_SPIN 1
+#define INITIALIZE_OUTPUT_ACCUMULATORS 1
+#define REDUCE_ACCUMULATORS 1
+#define REDUCE_ADDRESS_MATH 1
 #define BARRIER_ALWAYS_FAILS 0
 
 #if DEBUG_RECURRENT_OPS
@@ -434,6 +437,8 @@ private:
         if(stage_two)
         {
             load_thread_tile_inputs(register_state, shared_state, thread_inputs);
+            initialize_accumulators(accumulators);
+            perform_thread_tile_math(accumulators, weights, thread_inputs);
         }
 
         // 2
@@ -459,8 +464,6 @@ private:
         // 1
         if(stage_two)
         {
-            initialize_accumulators(accumulators);
-            perform_thread_tile_math(accumulators, weights, thread_inputs);
             store_accumulators_to_shared(register_state, shared_state, accumulators);
         }
 
@@ -1304,6 +1307,7 @@ private:
         SharedDataStorage& shared_state,
         RealType& accumulator, index_t value_offset)
     {
+        #if REDUCE_ACCUMULATOR
         index_t stride = Config::BLOCK_TILE_ROWS;
 
         index_t base_offset = get_compressed_input_linear_thread_id() +
@@ -1348,19 +1352,21 @@ private:
         }
 
         accumulator = is_barrier_thread() ? accumulator : accumulator + value;
+        #endif
     }
 
     __device__ void initialize_output_accumulator(RegisterState& register_state,
     SharedDataStorage& shared_state,
     RealType& accumulator, index_t value_offset)
     {
+        accumulator = 0.0;
+
+        #if INITIALIZE_OUTPUT_ACCUMULATORS
         index_t base_offset = get_compressed_input_linear_thread_id() +
             Config::COMPRESSED_THREADS_PER_BLOCK * value_offset;
 
         index_t output_offset = base_offset + register_state.shared_base +
             Config::SHARED_OUTPUT_OFFSET;
-
-        accumulator = 0.0;
 
         if(base_offset < Config::BLOCK_TILE_ROWS && get_block_id_y() == 0)
         {
@@ -1406,6 +1412,7 @@ private:
 
             accumulator = updated_accumulator;
         }
+        #endif
 
         accumulator = is_barrier_thread() ? 1.0 : accumulator;
     }
@@ -1757,7 +1764,10 @@ private:
     __device__ void store_accumulators(RegisterState& register_state,
         ThreadTileOutputAccumulators& accumulators)
     {
-        RealType* output_buffer = register_state.activation_scratch +
+        #if REDUCE_ADDRESS_MATH
+        RealType* outputBuffer = register_state.activation_scratch;
+
+        index_t bufferOffset =
             register_state.scratch_input_to_output_offset -
             2 * Config::EXPANDED_GRID_TILE_ROWS;
 
@@ -1770,17 +1780,25 @@ private:
         index_t threadOffset = threadId;
 
         index_t offset = blockOffset + threadOffset;
+        #else
+        RealType* outputBuffer = register_state.activation_scratch;
+        index_t offset = 0;
+        index_t bufferOffset;
+        #endif
 
-        RealType* output_pointer = output_buffer;
+        RealType* outputPointer = outputBuffer;
 
-        atomic_increment(output_pointer, register_state, accumulators, offset);
+        atomic_increment(outputPointer, register_state, accumulators, offset, bufferOffset);
     }
 
     __device__ void store_accumulators_back_prop(RegisterState& register_state,
         ThreadTileOutputAccumulators& accumulators)
     {
-        RealType* output_buffer = register_state.activation_scratch -
-            register_state.scratch_input_to_output_offset +
+        #if REDUCE_ADDRESS_MATH
+        RealType* outputBuffer = register_state.activation_scratch;
+
+        index_t bufferOffset =
+            - register_state.scratch_input_to_output_offset +
             2 * Config::EXPANDED_GRID_TILE_ROWS;
 
         index_t blockId = blockIdx.x;
@@ -1792,15 +1810,20 @@ private:
         index_t threadOffset = threadId;
 
         index_t offset = blockOffset + threadOffset;
+        #else
+        RealType* outputBuffer = register_state.activation_scratch;
+        index_t offset = 0;
+        index_t bufferOffset = 0;
+        #endif
 
-        RealType* output_pointer = output_buffer;
+        RealType* outputPointer = outputBuffer;
 
-        atomic_increment(output_pointer, register_state, accumulators, offset);
+        atomic_increment(outputPointer, register_state, accumulators, offset, bufferOffset);
     }
 
     __device__ void atomic_increment(RealType* output_pointer,
         RegisterState& register_state,
-        ThreadTileOutputAccumulators& accumulators, index_t offset) {
+        ThreadTileOutputAccumulators& accumulators, index_t offset, index_t bufferOffset) {
 
         #if ATOMIC_INCREMENT
         UNROLL
@@ -1812,18 +1835,19 @@ private:
             #if DEBUG_RECURRENT_OPS
             if(condition)
             {
-                auto result = atomic_increment_relaxed(output_pointer[offset],
+                auto result = atomic_increment_relaxed(output_pointer[offset + bufferOffset],
                     accumulators.data[row]);
 
                 dprintf("Thread (%d, %d, %d, %d) - atomic increment %d (%p) "
                     "%f = accumulator %f + original value %f.\n",
-                    blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y, row, output_pointer + offset,
+                    blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y, row,
+                    output_pointer + offset + bufferOffset,
                     (float)(result + accumulators.data[row]),
                     (float)accumulators.data[row],
                     (float)result);
             }
             #else
-            predicated_atomic_increment_reduce_relaxed(output_pointer[offset],
+            predicated_atomic_increment_reduce_relaxed(output_pointer[offset + bufferOffset],
                 accumulators.data[row], condition);
             #endif
         }
