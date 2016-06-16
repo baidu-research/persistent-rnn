@@ -421,15 +421,6 @@ private:
         // 0
         if(stage_one)
         {
-            if(!check_for_critical_barrier_failure(register_state, shared_state))
-            {
-                return;
-            }
-        }
-
-        // 0
-        if(stage_one)
-        {
             load_input(register_state, data_buffer, load_output);
         }
 
@@ -449,6 +440,15 @@ private:
         if(stage_three)
         {
             store_accumulators(register_state, output_accumulators);
+        }
+
+        // 0
+        if(stage_one)
+        {
+            if(!check_for_critical_barrier_failure(register_state, shared_state))
+            {
+                return;
+            }
         }
 
         // 1
