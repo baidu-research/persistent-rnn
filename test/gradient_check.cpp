@@ -15,6 +15,7 @@
 
 #include <prnn/detail/util/logger.h>
 #include <prnn/detail/util/argument_parser.h>
+#include <prnn/detail/util/string.h>
 
 // Standard Library Includes
 #include <random>
@@ -37,9 +38,49 @@ public:
     prnn::RecurrentLayerDirection direction;
 
 public:
+    std::string specificSample;
+
+public:
+    bool usePersistentBackProp;
+    bool usePersistentForwardProp;
+
+public:
     bool verbose;
 
 };
+
+size_t parseSamplePosition(const std::string& position, size_t rows, size_t columns)
+{
+    size_t row = 0;
+    size_t column = 0;
+
+    auto coordinates = prnn::util::split(position, ",");
+
+    if(coordinates.size() > 0)
+    {
+        std::stringstream stream;
+
+        stream << prnn::util::removeWhitespace(coordinates[0]);
+
+        stream >> row;
+
+        row = row % rows;
+    }
+
+    if(coordinates.size() > 1)
+    {
+        std::stringstream stream;
+
+        stream << prnn::util::removeWhitespace(coordinates[1]);
+
+        stream >> column;
+
+        columns = column % columns;
+    }
+
+    return row + column * rows;
+}
+
 
 void TestSimpleRecurrentOps(const Options& options)
 {
@@ -179,7 +220,8 @@ void TestSimpleRecurrentOpsGradientCheck(const Options& options)
     samples = std::min(window_rows * window_columns, samples);
 
     prnn::RecurrentOpsHandle handle(layer_size, mini_batch, timesteps,
-        prnn::RecurrentRectifiedLinear(), options.direction, true, 0.5);
+        prnn::RecurrentRectifiedLinear(), options.direction,
+        options.usePersistentForwardProp, 0.5);
 
     auto weights = zeros({layer_size, layer_size}, precision);
     auto weights_slice = slice(weights, {0, 0}, {window_rows, window_columns});
@@ -236,11 +278,15 @@ void TestSimpleRecurrentOpsGradientCheck(const Options& options)
                            {window_outputs, mini_batch, timesteps})),
             {window_outputs, mini_batch * timesteps}).debugString();
 
+    handle.allowPersistentKernels = options.usePersistentBackProp;
+
     backPropDeltasRecurrent(deltas, weights, output_activations, handle);
 
     auto dWeights = ones(weights.size(), precision);
 
     backPropGradientsRecurrent(dWeights, output_activations, deltas, handle);
+
+    handle.allowPersistentKernels = options.usePersistentForwardProp;
 
     prnn::util::log("TestRecurrent") << "Output Deltas " <<
         reshape(copy(slice(deltas,
@@ -251,7 +297,8 @@ void TestSimpleRecurrentOpsGradientCheck(const Options& options)
 
     size_t gradient_count = window_rows * window_columns;
 
-    std::vector<size_t> sample_positions = {0, 5};
+    std::vector<size_t> sample_positions = {parseSamplePosition(options.specificSample,
+        window_rows, window_columns)};
 
     while (sample_positions.size() < samples) {
         sample_positions.push_back(random_engine() % gradient_count);
@@ -392,10 +439,20 @@ int main(int argc, char** argv)
     options.miniBatchSize = 3;
     options.gradientCheckSamples = 32;
 
+    options.usePersistentBackProp = true;
+    options.usePersistentForwardProp = true;
+
+    options.specificSample = "0,0";
+
     parser.parse("-t", "--timeteps",   options.timesteps,     options.timesteps,     "The number of timesteps to run the RNN for.");
     parser.parse("-b", "--mini-batch", options.miniBatchSize, options.miniBatchSize, "The mini-batch size to run through the layer.");
     parser.parse("-l", "--layer-size", options.layerSize,     options.layerSize,     "The size of the RNN layer to operate on.");
     parser.parse("-e", "--epsilon",    options.epsilon,       options.epsilon,       "Epsilon used for the gradient check.");
+
+    parser.parse("", "--persistent-back",    options.usePersistentBackProp,    options.usePersistentBackProp,    "Use persistent kernels for back prop.");
+    parser.parse("", "--persistent-forward", options.usePersistentForwardProp, options.usePersistentForwardProp, "Use persistent kernels for forward prop.");
+
+    parser.parse("", "--specific-sample", options.specificSample, options.specificSample, "Specific weight to sample.");
 
     parser.parse("-s", "--grad-check-samples", options.gradientCheckSamples,
         options.gradientCheckSamples, "The number of weights to perform gradient check on.");
