@@ -14,23 +14,42 @@
 #include <prnn/detail/rnn/recurrent_ops.h>
 
 #include <prnn/detail/util/logger.h>
+#include <prnn/detail/util/argument_parser.h>
 
 // Standard Library Includes
 #include <random>
 #include <iostream>
 
-void TestSimpleRecurrentOps()
+class Options
+{
+public:
+    size_t layerSize;
+    size_t miniBatchSize;
+    size_t timesteps;
+
+public:
+    size_t gradientCheckSamples;
+
+public:
+    prnn::RecurrentLayerDirection direction;
+
+public:
+    bool verbose;
+
+};
+
+void TestSimpleRecurrentOps(const Options& options)
 {
     auto precision = prnn::matrix::SinglePrecision();
 
     prnn::matrix::srand(377);
 
-    size_t layer_size = prnn::rnn::getMaximumSizeRNNForThisGPU(precision);
-    size_t timesteps  = 10;
-    size_t mini_batch = 2;
+    size_t layer_size = options.layerSize;
+    size_t timesteps  = options.timesteps;
+    size_t mini_batch = options.miniBatchSize;
 
     prnn::RecurrentOpsHandle handle(layer_size, mini_batch, timesteps,
-        prnn::RecurrentRectifiedLinear(), prnn::RECURRENT_FORWARD);
+        prnn::RecurrentRectifiedLinear(), options.direction);
 
     auto weights     = ones({layer_size, layer_size}, precision);
     auto activations = ones({layer_size, mini_batch, timesteps}, precision);
@@ -135,7 +154,7 @@ void assertGreaterThanOrEqual(double left, double right)
     }
 }
 
-void TestSimpleRecurrentOpsGradientCheck(prnn::RecurrentLayerDirection direction)
+void TestSimpleRecurrentOpsGradientCheck(const Options& options)
 {
     auto precision = prnn::matrix::SinglePrecision();
 
@@ -145,10 +164,10 @@ void TestSimpleRecurrentOpsGradientCheck(prnn::RecurrentLayerDirection direction
 
     prnn::matrix::srand(377);
 
-    size_t layer_size = prnn::rnn::getMaximumSizeRNNForThisGPU(precision);
-    size_t timesteps  = 5;
-    size_t mini_batch = 3;
-    size_t samples    = 10;
+    size_t layer_size = options.layerSize;
+    size_t timesteps  = options.timesteps;
+    size_t mini_batch = options.miniBatchSize;
+    size_t samples    = options.gradientCheckSamples;
 
     size_t window_rows    = layer_size;
     size_t window_columns = window_rows;
@@ -157,7 +176,7 @@ void TestSimpleRecurrentOpsGradientCheck(prnn::RecurrentLayerDirection direction
     samples = std::min(window_rows * window_columns, samples);
 
     prnn::RecurrentOpsHandle handle(layer_size, mini_batch, timesteps,
-        prnn::RecurrentRectifiedLinear(), direction, true, 0.5);
+        prnn::RecurrentRectifiedLinear(), options.direction, true, 0.5);
 
     auto weights = zeros({layer_size, layer_size}, precision);
     auto weights_slice = slice(weights, {0, 0}, {window_rows, window_columns});
@@ -322,26 +341,30 @@ void TestSimpleRecurrentOpsGradientCheck(prnn::RecurrentLayerDirection direction
     assertLessThanOrEqual(   difference, 1e-16);
 }
 
-void TestRecurrentOpsGradientCheckHelper(prnn::RecurrentLayerDirection d)
+void TestRecurrentOpsGradientCheck(const Options& options)
 {
-    TestSimpleRecurrentOpsGradientCheck(d);
+    Options newOptions = options;
+
+    newOptions.direction = prnn::RECURRENT_FORWARD;
+
+    TestRecurrentOpsGradientCheck(newOptions);
 }
 
-void TestRecurrentOpsGradientCheck()
+void TestReverseRecurrentOpsGradientCheck(const Options& options)
 {
-    TestRecurrentOpsGradientCheckHelper(prnn::RECURRENT_FORWARD);
+    Options newOptions = options;
+
+    newOptions.direction = prnn::RECURRENT_FORWARD;
+
+    TestRecurrentOpsGradientCheck(newOptions);
 }
 
-void TestReverseRecurrentOpsGradientCheck()
-{
-    TestRecurrentOpsGradientCheckHelper(prnn::RECURRENT_REVERSE);
-}
-
-void RunTest(const std::string& testName, void (*function)(void) )
+void RunTest(const std::string& testName, void (*function)(const Options& options),
+    const Options& options)
 {
     try
     {
-        function();
+        function(options);
         std::cout << "Test '" << testName << "' Passed\n";
     }
     catch(std::exception& e)
@@ -352,11 +375,32 @@ void RunTest(const std::string& testName, void (*function)(void) )
 
 int main(int argc, char** argv)
 {
+    prnn::util::ArgumentParser parser(argc, argv);
+
+    auto precision = prnn::matrix::SinglePrecision();
+
+    Options options;
+
+    options.layerSize = prnn::rnn::getMaximumSizeRNNForThisGPU(precision);
+    options.timesteps = 10;
+    options.verbose   = false;
+
+    parser.parse("-t", "--timeteps",   options.timesteps,     options.timesteps,     "The number of timesteps to run the RNN for.");
+    parser.parse("-b", "--mini-batch", options.miniBatchSize, options.miniBatchSize, "The mini-batch size to run through the layer.");
+    parser.parse("-l", "--layer-size", options.layerSize,     options.layerSize,     "The size of the RNN layer to operate on.");
+
+    parser.parse("-s", "--grad-check-samples", options.gradientCheckSamples,
+        options.gradientCheckSamples, "The number of weights to perform gradient check on.");
+
+    parser.parse("-v", "--verbose", options.verbose, options.verbose, "Enable all PRNN logs.");
+
+    parser.parse();
+
     prnn::util::enable_all_logs();
 
-    //RunTest("Simple Recurrent Ops Test",            TestSimpleRecurrentOps              );
-    RunTest("Recurrent Forward Ops Gradient Check", TestRecurrentOpsGradientCheck       );
-    //RunTest("Recurrent Reverse Ops Gradient Check", TestReverseRecurrentOpsGradientCheck);
+    RunTest("Recurrent Forward Ops Gradient Check", TestRecurrentOpsGradientCheck       , options);
+    //RunTest("Recurrent Reverse Ops Gradient Check", TestReverseRecurrentOpsGradientCheck, options);
+    RunTest("Simple Recurrent Ops Test",            TestSimpleRecurrentOps              , options);
 
     return 0;
 }
