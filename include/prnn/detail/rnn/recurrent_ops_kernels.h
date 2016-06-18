@@ -1242,7 +1242,7 @@ private:
     __device__ void predicated_load_back_prop_activation_vector(RegisterState& register_state,
         RealType& value, index_t value_offset)
     {
-        index_t  block_offset = get_block_id_y() * Config::BLOCK_TILE_COLUMNS;
+        index_t  block_offset = get_block_id_y() * Config::EXPANDED_BLOCK_TILE_COLUMNS;
         index_t thread_offset = get_thread_id_in_load_group() *
             Config::USEFUL_GLOBAL_VALUES_PER_THREAD;
 
