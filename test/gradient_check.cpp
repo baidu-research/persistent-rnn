@@ -135,7 +135,7 @@ prnn::matrix::Matrix compute_deltas(prnn::matrix::Matrix complete_activations,
 
 void assertLessThanOrEqual(double left, double right)
 {
-    if(left <= right)
+    if(left > right)
     {
         std::stringstream stream;
 
@@ -147,11 +147,11 @@ void assertLessThanOrEqual(double left, double right)
 
 void assertGreaterThanOrEqual(double left, double right)
 {
-    if(left >= right)
+    if(left < right)
     {
         std::stringstream stream;
 
-        stream << "Assertion Failed (" << left << " <= " << right << ")\n";
+        stream << "Assertion Failed (" << left << " >= " << right << ")\n";
 
         throw std::logic_error(stream.str());
     }
@@ -340,8 +340,8 @@ void TestSimpleRecurrentOpsGradientCheck(const Options& options)
 
     difference = (difference == 0.0 && total == 0.0) ? 0.0 : (difference / total);
 
-    assertGreaterThanOrEqual(difference, 3e-2 );
-    assertLessThanOrEqual(   difference, 1e-16);
+    assertLessThanOrEqual(    difference, 1e-4 );
+    assertGreaterThanOrEqual( difference, 1e-16);
 }
 
 void TestRecurrentOpsGradientCheck(const Options& options)
@@ -408,7 +408,7 @@ int main(int argc, char** argv)
 
     RunTest("Recurrent Forward Ops Gradient Check", TestRecurrentOpsGradientCheck       , options);
     //RunTest("Recurrent Reverse Ops Gradient Check", TestReverseRecurrentOpsGradientCheck, options);
-    RunTest("Simple Recurrent Ops Test",            TestSimpleRecurrentOps              , options);
+    //RunTest("Simple Recurrent Ops Test",            TestSimpleRecurrentOps              , options);
 
     return 0;
 }
