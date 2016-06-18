@@ -31,6 +31,9 @@ public:
     size_t gradientCheckSamples;
 
 public:
+    double epsilon;
+
+public:
     prnn::RecurrentLayerDirection direction;
 
 public:
@@ -255,7 +258,7 @@ void TestSimpleRecurrentOpsGradientCheck(const Options& options)
     }
 
     // grad check over the sample positions
-    double epsilon    = 1.0e-4;
+    double epsilon    = options.epsilon;
     double difference = 0.0;
     double total      = 0.0;
 
@@ -384,6 +387,7 @@ int main(int argc, char** argv)
     options.layerSize = prnn::rnn::getMaximumSizeRNNForThisGPU(precision);
     options.timesteps = 10;
     options.verbose   = false;
+    options.epsilon   = 1.0e-4;
 
     options.miniBatchSize = 3;
     options.gradientCheckSamples = 32;
@@ -391,6 +395,7 @@ int main(int argc, char** argv)
     parser.parse("-t", "--timeteps",   options.timesteps,     options.timesteps,     "The number of timesteps to run the RNN for.");
     parser.parse("-b", "--mini-batch", options.miniBatchSize, options.miniBatchSize, "The mini-batch size to run through the layer.");
     parser.parse("-l", "--layer-size", options.layerSize,     options.layerSize,     "The size of the RNN layer to operate on.");
+    parser.parse("-e", "--epsilon",    options.epsilon,       options.epsilon,       "Epsilon used for the gradient check.");
 
     parser.parse("-s", "--grad-check-samples", options.gradientCheckSamples,
         options.gradientCheckSamples, "The number of weights to perform gradient check on.");
