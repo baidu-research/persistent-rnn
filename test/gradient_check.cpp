@@ -45,6 +45,9 @@ public:
     bool usePersistentForwardProp;
 
 public:
+    double skipConnectionScale;
+
+public:
     bool verbose;
 
 };
@@ -221,7 +224,7 @@ void TestSimpleRecurrentOpsGradientCheck(const Options& options)
 
     prnn::RecurrentOpsHandle handle(layer_size, mini_batch, timesteps,
         prnn::RecurrentRectifiedLinear(), options.direction,
-        options.usePersistentForwardProp, 0.5);
+        options.usePersistentForwardProp, options.skipConnectionScale);
 
     auto weights = zeros({layer_size, layer_size}, precision);
     auto weights_slice = slice(weights, {0, 0}, {window_rows, window_columns});
@@ -443,6 +446,7 @@ int main(int argc, char** argv)
     options.usePersistentForwardProp = true;
 
     options.specificSample = "0,0";
+    options.skipConnectionScale = 0.5;
 
     parser.parse("-t", "--timeteps",   options.timesteps,     options.timesteps,     "The number of timesteps to run the RNN for.");
     parser.parse("-b", "--mini-batch", options.miniBatchSize, options.miniBatchSize, "The mini-batch size to run through the layer.");
@@ -453,6 +457,7 @@ int main(int argc, char** argv)
     parser.parse("", "--persistent-forward", options.usePersistentForwardProp, options.usePersistentForwardProp, "Use persistent kernels for forward prop.");
 
     parser.parse("", "--specific-sample", options.specificSample, options.specificSample, "Specific weight to sample.");
+    parser.parse("", "--skip-connection-scale", options.skipConnectionScale, options.skipConnectionScale, "Scaling factor for skip connections.");
 
     parser.parse("-s", "--grad-check-samples", options.gradientCheckSamples,
         options.gradientCheckSamples, "The number of weights to perform gradient check on.");
