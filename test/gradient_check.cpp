@@ -347,7 +347,7 @@ void TestRecurrentOpsGradientCheck(const Options& options)
 
     newOptions.direction = prnn::RECURRENT_FORWARD;
 
-    TestRecurrentOpsGradientCheck(newOptions);
+    TestSimpleRecurrentOpsGradientCheck(newOptions);
 }
 
 void TestReverseRecurrentOpsGradientCheck(const Options& options)
@@ -356,7 +356,7 @@ void TestReverseRecurrentOpsGradientCheck(const Options& options)
 
     newOptions.direction = prnn::RECURRENT_FORWARD;
 
-    TestRecurrentOpsGradientCheck(newOptions);
+    TestSimpleRecurrentOpsGradientCheck(newOptions);
 }
 
 void RunTest(const std::string& testName, void (*function)(const Options& options),
@@ -384,6 +384,9 @@ int main(int argc, char** argv)
     options.layerSize = prnn::rnn::getMaximumSizeRNNForThisGPU(precision);
     options.timesteps = 10;
     options.verbose   = false;
+
+    options.miniBatchSize = 3;
+    options.gradientCheckSamples = 32;
 
     parser.parse("-t", "--timeteps",   options.timesteps,     options.timesteps,     "The number of timesteps to run the RNN for.");
     parser.parse("-b", "--mini-batch", options.miniBatchSize, options.miniBatchSize, "The mini-batch size to run through the layer.");
