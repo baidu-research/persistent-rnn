@@ -486,6 +486,80 @@ void TestCTensor(const Options& options)
     assertSuccess(prnnDestroyTensorDescriptor(descriptor));
 }
 
+void TestCRNN(const Options& options)
+{
+    prnnHandle_t handle;
+    prnnRNNDescriptor_t descriptor;
+    prnnTensorDescriptor_t inputDescriptor;
+
+    assertSuccess(prnnCreate(&handle));
+
+    assertSuccess(prnnCreateTensorDescriptor(&inputDescriptor));
+
+    const int inputDimensions[3] = {static_cast<int>(options.layerSize),
+                                    static_cast<int>(options.miniBatchSize),
+                                    static_cast<int>(options.timesteps)};
+
+    const int inputStrides[3]    = {static_cast<int>(1),
+                                    static_cast<int>(options.layerSize),
+                                    static_cast<int>(options.layerSize * options.miniBatchSize)};
+
+    assertSuccess(prnnSetTensorNdDescriptor(inputDescriptor,
+                                            PRNN_DATA_FLOAT,
+                                            3,
+                                            inputDimensions,
+                                            inputStrides));
+
+    assertSuccess(prnnCreateRNNDescriptor(&descriptor));
+
+    assertSuccess(prnnSetRNNDescriptor(descriptor,
+                                       options.layerSize,
+                                       options.timesteps,
+                                       1,
+                                       nullptr,
+                                       PRNN_SKIP_INPUT,
+                                       PRNN_UNIDIRECTIONAL,
+                                       PRNN_RNN_RELU,
+                                       PRNN_DATA_FLOAT));
+
+    size_t reserveSize = 0;
+
+    assertSuccess(prnnGetRNNTrainingReserveSize(handle,
+                                                descriptor,
+                                                &inputDescriptor,
+                                                &reserveSize));
+
+    assertEqual(reserveSize, 0);
+
+    size_t parameterSize = 0;
+
+    assertSuccess(prnnGetRNNParamsSize(handle,
+                                       descriptor,
+                                       &inputDescriptor,
+                                       &parameterSize));
+
+    assertGreaterThanOrEqual(parameterSize,
+        sizeof(float) * options.layerSize * options.layerSize);
+
+    size_t workspaceSize = 0;
+
+    assertSuccess(prnnGetRNNWorkspaceSize(handle,
+                                          descriptor,
+                                          &inputDescriptor,
+                                          &workspaceSize));
+
+    assertGreaterThanOrEqual(workspaceSize, sizeof(float));
+
+    assertSuccess(prnnDestroyRNNDescriptor(descriptor));
+    assertSuccess(prnnDestroyTensorDescriptor(inputDescriptor));
+    assertSuccess(prnnDestroy(handle));
+}
+
+void TestCForwardOps(const Options& options)
+{
+
+}
+
 void RunTest(const std::string& testName, void (*function)(const Options& options),
     Options& options)
 {
@@ -557,6 +631,8 @@ int main(int argc, char** argv)
     }
 
     RunTest("C Interface Tensor Test",              TestCTensor,                          options);
+    RunTest("C Interface RNN Test",                 TestCRNN,                             options);
+    RunTest("C Interface Forward Ops Test",         TestCForwardOps,                      options);
     RunTest("Recurrent Forward Ops Gradient Check", TestRecurrentOpsGradientCheck,        options);
     RunTest("Simple Recurrent Ops Test",            TestSimpleRecurrentOps,               options);
     //RunTest("Recurrent Reverse Ops Gradient Check", TestReverseRecurrentOpsGradientCheck, options);

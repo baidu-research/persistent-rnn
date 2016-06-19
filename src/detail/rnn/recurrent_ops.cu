@@ -781,16 +781,38 @@ matrix::Matrix getForwardPropScratch(const RecurrentOpsHandle& handle,
     return matrix::Matrix(scratchDimension, precision);
 }
 
+size_t getForwardPropScratchSize(const RecurrentOpsHandle& handle,
+    const matrix::Precision& precision)
+{
+    matrix::Dimension dimension(handle.layerSize, handle.miniBatchSize, handle.timesteps);
+
+    auto scratchDimension = extendDimensions(dimension, precision);
+
+    return precision.size() * dimension.product();
+}
+
 matrix::Matrix getBackPropDeltasScratch(const RecurrentOpsHandle& handle,
     const matrix::Precision& precision)
 {
     return getForwardPropScratch(handle, precision);
 }
 
+size_t getBackPropDeltasScratchSize(const RecurrentOpsHandle& handle,
+    const matrix::Precision& precision)
+{
+    return getForwardPropScratchSize(handle, precision);
+}
+
 matrix::Matrix getBackPropGradientsScratch(const RecurrentOpsHandle& handle,
     const matrix::Precision& precision)
 {
     return matrix::Matrix();
+}
+
+size_t getBackPropGradientsScratchSize(const RecurrentOpsHandle& handle,
+    const matrix::Precision& precision)
+{
+    return 0;
 }
 
 }
