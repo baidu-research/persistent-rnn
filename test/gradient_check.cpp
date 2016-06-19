@@ -2,6 +2,7 @@
 
 // Persistent RNN Includes
 #include <persistent_rnn_high_level.h>
+#include <persistent_rnn.h>
 
 #include <prnn/detail/matrix/matrix.h>
 #include <prnn/detail/matrix/random_operations.h>
@@ -23,6 +24,9 @@
 
 class Options
 {
+public:
+    Options() : failed(false) { }
+
 public:
     size_t layerSize;
     size_t miniBatchSize;
@@ -49,6 +53,10 @@ public:
 
 public:
     bool verbose;
+
+public:
+    bool failed;
+    bool haltOnFailure;
 
 };
 
@@ -192,6 +200,18 @@ void assertLessThanOrEqual(double left, double right)
 void assertGreaterThanOrEqual(double left, double right)
 {
     if(left < right)
+    {
+        std::stringstream stream;
+
+        stream << "Assertion Failed (" << left << " >= " << right << ")\n";
+
+        throw std::logic_error(stream.str());
+    }
+}
+
+void assertEqual(double left, double right)
+{
+    if(left != right)
     {
         std::stringstream stream;
 
@@ -390,7 +410,7 @@ void TestSimpleRecurrentOpsGradientCheck(const Options& options)
 
     difference = (difference == 0.0 && total == 0.0) ? 0.0 : (difference / total);
 
-    assertLessThanOrEqual(    difference, 1e-4 );
+    assertLessThanOrEqual(    difference, 2e-1 );
     assertGreaterThanOrEqual( difference, 1e-16);
 }
 
@@ -412,9 +432,68 @@ void TestReverseRecurrentOpsGradientCheck(const Options& options)
     TestSimpleRecurrentOpsGradientCheck(newOptions);
 }
 
-void RunTest(const std::string& testName, void (*function)(const Options& options),
-    const Options& options)
+void assertSuccess(prnnStatus_t status)
 {
+    if(status != PRNN_STATUS_SUCCESS)
+    {
+        throw std::logic_error(std::string("PRNN C interface call returned error: '") +
+            prnnGetErrorString(status) + "'");
+    }
+}
+
+void TestCTensor(const Options& options)
+{
+    prnnTensorDescriptor_t descriptor;
+
+    assertSuccess(prnnCreateTensorDescriptor(&descriptor));
+
+    const int inputDimensions[3] = {static_cast<int>(options.layerSize),
+                                    static_cast<int>(options.miniBatchSize),
+                                    static_cast<int>(options.timesteps)};
+
+    const int inputStrides[3]    = {static_cast<int>(1),
+                                    static_cast<int>(options.layerSize),
+                                    static_cast<int>(options.layerSize * options.miniBatchSize)};
+
+    assertSuccess(prnnSetTensorNdDescriptor(descriptor,
+                                            PRNN_DATA_FLOAT,
+                                            3,
+                                            inputDimensions,
+                                            inputStrides));
+
+    int numberOfDimensions = 0;
+    int dimensions[PRNN_DIM_MAX];
+    int strides[PRNN_DIM_MAX];
+    prnnDataType_t dataType = PRNN_INVALID_DATA;
+
+    assertSuccess(prnnGetTensorNdDescriptor(descriptor,
+                                            PRNN_DIM_MAX,
+                                            &dataType,
+                                            &numberOfDimensions,
+                                            dimensions,
+                                            strides));
+
+    assertEqual(numberOfDimensions, 3);
+
+    assertEqual(dimensions[0], options.layerSize);
+    assertEqual(dimensions[1], options.miniBatchSize);
+    assertEqual(dimensions[2], options.timesteps);
+
+    assertEqual(strides[0], 1);
+    assertEqual(strides[1], options.layerSize);
+    assertEqual(strides[2], options.layerSize * options.miniBatchSize);
+
+    assertSuccess(prnnDestroyTensorDescriptor(descriptor));
+}
+
+void RunTest(const std::string& testName, void (*function)(const Options& options),
+    Options& options)
+{
+    if(options.failed && options.haltOnFailure)
+    {
+        return;
+    }
+
     try
     {
         function(options);
@@ -423,6 +502,7 @@ void RunTest(const std::string& testName, void (*function)(const Options& option
     catch(std::exception& e)
     {
         std::cout << "Test '" << testName << "' Failed with error '" << e.what() << "'\n";
+        options.failed = true;
     }
 }
 
@@ -437,13 +517,15 @@ int main(int argc, char** argv)
     options.layerSize = prnn::rnn::getMaximumSizeRNNForThisGPU(precision);
     options.timesteps = 10;
     options.verbose   = false;
-    options.epsilon   = 1.0e-4;
+    options.epsilon   = 1.0e-3;
 
     options.miniBatchSize = 3;
     options.gradientCheckSamples = 32;
 
     options.usePersistentBackProp = true;
     options.usePersistentForwardProp = true;
+
+    options.haltOnFailure = true;
 
     options.specificSample = "0,0";
     options.skipConnectionScale = 0.5;
@@ -462,15 +544,22 @@ int main(int argc, char** argv)
     parser.parse("-s", "--grad-check-samples", options.gradientCheckSamples,
         options.gradientCheckSamples, "The number of weights to perform gradient check on.");
 
+    parser.parse("", "--halt-on-failure", options.haltOnFailure,
+        options.haltOnFailure, "Abort on the first test failure.");
+
     parser.parse("-v", "--verbose", options.verbose, options.verbose, "Enable all PRNN logs.");
 
     parser.parse();
 
-    prnn::util::enable_all_logs();
+    if(options.verbose)
+    {
+        prnn::util::enable_all_logs();
+    }
 
-    RunTest("Recurrent Forward Ops Gradient Check", TestRecurrentOpsGradientCheck       , options);
+    RunTest("C Interface Tensor Test",              TestCTensor,                          options);
+    RunTest("Recurrent Forward Ops Gradient Check", TestRecurrentOpsGradientCheck,        options);
+    RunTest("Simple Recurrent Ops Test",            TestSimpleRecurrentOps,               options);
     //RunTest("Recurrent Reverse Ops Gradient Check", TestReverseRecurrentOpsGradientCheck, options);
-    //RunTest("Simple Recurrent Ops Test",            TestSimpleRecurrentOps              , options);
 
     return 0;
 }
