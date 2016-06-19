@@ -1058,7 +1058,7 @@ private:
         UNROLL
         for (index_t i = 0; i < Config::USEFUL_GLOBAL_VALUES_PER_THREAD; ++i)
         {
-            if (is_input_thread())
+            if(is_input_thread())
             {
                 data_buffer.data[i] = parameters.config.apply_activation_derivative(
                     activation_buffer.data[i], data_buffer.data[i]);
@@ -1242,7 +1242,7 @@ private:
     __device__ void predicated_load_back_prop_activation_vector(RegisterState& register_state,
         RealType& value, index_t value_offset)
     {
-        index_t  block_offset = get_block_id_y() * Config::BLOCK_TILE_COLUMNS;
+        index_t  block_offset = get_block_id_y() * Config::EXPANDED_BLOCK_TILE_COLUMNS;
         index_t thread_offset = get_thread_id_in_load_group() *
             Config::USEFUL_GLOBAL_VALUES_PER_THREAD;
 
@@ -1903,13 +1903,6 @@ private:
 
     __device__ void advance_shared_pointers(RegisterState& register_state) {
         register_state.shared_base ^= Config::SHARED_BUFFER_SIZE;
-    }
-
-    __device__ index_t get_scratch_offset(index_t offset) {
-        index_t layer     = offset / parameters.layer_size;
-        index_t remainder = offset % parameters.layer_size;
-
-        return layer * Config::EXPANDED_GRID_TILE_ROWS + remainder;;
     }
 
 private:

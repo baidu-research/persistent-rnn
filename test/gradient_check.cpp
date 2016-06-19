@@ -2,6 +2,7 @@
 
 // Persistent RNN Includes
 #include <persistent_rnn_high_level.h>
+#include <persistent_rnn.h>
 
 #include <prnn/detail/matrix/matrix.h>
 #include <prnn/detail/matrix/random_operations.h>
@@ -14,23 +15,96 @@
 #include <prnn/detail/rnn/recurrent_ops.h>
 
 #include <prnn/detail/util/logger.h>
+#include <prnn/detail/util/argument_parser.h>
+#include <prnn/detail/util/string.h>
 
 // Standard Library Includes
 #include <random>
 #include <iostream>
 
-void TestSimpleRecurrentOps()
+class Options
+{
+public:
+    Options() : failed(false) { }
+
+public:
+    size_t layerSize;
+    size_t miniBatchSize;
+    size_t timesteps;
+
+public:
+    size_t gradientCheckSamples;
+
+public:
+    double epsilon;
+
+public:
+    prnn::RecurrentLayerDirection direction;
+
+public:
+    std::string specificSample;
+
+public:
+    bool usePersistentBackProp;
+    bool usePersistentForwardProp;
+
+public:
+    double skipConnectionScale;
+
+public:
+    bool verbose;
+
+public:
+    bool failed;
+    bool haltOnFailure;
+
+};
+
+size_t parseSamplePosition(const std::string& position, size_t rows, size_t columns)
+{
+    size_t row = 0;
+    size_t column = 0;
+
+    auto coordinates = prnn::util::split(position, ",");
+
+    if(coordinates.size() > 0)
+    {
+        std::stringstream stream;
+
+        stream << prnn::util::removeWhitespace(coordinates[0]);
+
+        stream >> row;
+
+        row = row % rows;
+    }
+
+    if(coordinates.size() > 1)
+    {
+        std::stringstream stream;
+
+        stream << prnn::util::removeWhitespace(coordinates[1]);
+
+        stream >> column;
+
+        columns = column % columns;
+    }
+
+    return row + column * rows;
+}
+
+
+void TestSimpleRecurrentOps(const Options& options)
 {
     auto precision = prnn::matrix::SinglePrecision();
 
     prnn::matrix::srand(377);
 
-    size_t layer_size = prnn::rnn::getMaximumSizeRNNForThisGPU(precision);
-    size_t timesteps  = 10;
-    size_t mini_batch = 2;
+    size_t layer_size = options.layerSize;
+    size_t timesteps  = options.timesteps;
+    size_t mini_batch = options.miniBatchSize;
 
     prnn::RecurrentOpsHandle handle(layer_size, mini_batch, timesteps,
-        prnn::RecurrentRectifiedLinear(), prnn::RECURRENT_FORWARD);
+        prnn::RecurrentRectifiedLinear(), options.direction);
 
     auto weights     = ones({layer_size, layer_size}, precision);
     auto activations = ones({layer_size, mini_batch, timesteps}, precision);
@@ -113,7 +187,7 @@ prnn::matrix::Matrix compute_deltas(prnn::matrix::Matrix complete_activations,
 
 void assertLessThanOrEqual(double left, double right)
 {
-    if(left <= right)
+    if(left > right)
     {
         std::stringstream stream;
 
@@ -125,17 +199,29 @@ void assertLessThanOrEqual(double left, double right)
 
 void assertGreaterThanOrEqual(double left, double right)
 {
-    if(left >= right)
+    if(left < right)
     {
         std::stringstream stream;
 
-        stream << "Assertion Failed (" << left << " <= " << right << ")\n";
+        stream << "Assertion Failed (" << left << " >= " << right << ")\n";
 
         throw std::logic_error(stream.str());
     }
 }
 
-void TestSimpleRecurrentOpsGradientCheck(prnn::RecurrentLayerDirection direction)
+void assertEqual(double left, double right)
+{
+    if(left != right)
+    {
+        std::stringstream stream;
+
+        stream << "Assertion Failed (" << left << " >= " << right << ")\n";
+
+        throw std::logic_error(stream.str());
+    }
+}
+
+void TestSimpleRecurrentOpsGradientCheck(const Options& options)
 {
     auto precision = prnn::matrix::SinglePrecision();
 
@@ -145,10 +231,10 @@ void TestSimpleRecurrentOpsGradientCheck(prnn::RecurrentLayerDirection direction
 
     prnn::matrix::srand(377);
 
-    size_t layer_size = prnn::rnn::getMaximumSizeRNNForThisGPU(precision);
-    size_t timesteps  = 5;
-    size_t mini_batch = 3;
-    size_t samples    = 10;
+    size_t layer_size = options.layerSize;
+    size_t timesteps  = options.timesteps;
+    size_t mini_batch = options.miniBatchSize;
+    size_t samples    = options.gradientCheckSamples;
 
     size_t window_rows    = layer_size;
     size_t window_columns = window_rows;
@@ -157,7 +243,8 @@ void TestSimpleRecurrentOpsGradientCheck(prnn::RecurrentLayerDirection direction
     samples = std::min(window_rows * window_columns, samples);
 
     prnn::RecurrentOpsHandle handle(layer_size, mini_batch, timesteps,
-        prnn::RecurrentRectifiedLinear(), direction, true, 0.5);
+        prnn::RecurrentRectifiedLinear(), options.direction,
+        options.usePersistentForwardProp, options.skipConnectionScale);
 
     auto weights = zeros({layer_size, layer_size}, precision);
     auto weights_slice = slice(weights, {0, 0}, {window_rows, window_columns});
@@ -214,11 +301,15 @@ void TestSimpleRecurrentOpsGradientCheck(prnn::RecurrentLayerDirection direction
                            {window_outputs, mini_batch, timesteps})),
             {window_outputs, mini_batch * timesteps}).debugString();
 
+    handle.allowPersistentKernels = options.usePersistentBackProp;
+
     backPropDeltasRecurrent(deltas, weights, output_activations, handle);
 
     auto dWeights = ones(weights.size(), precision);
 
     backPropGradientsRecurrent(dWeights, output_activations, deltas, handle);
+
+    handle.allowPersistentKernels = options.usePersistentForwardProp;
 
     prnn::util::log("TestRecurrent") << "Output Deltas " <<
         reshape(copy(slice(deltas,
@@ -229,14 +320,15 @@ void TestSimpleRecurrentOpsGradientCheck(prnn::RecurrentLayerDirection direction
 
     size_t gradient_count = window_rows * window_columns;
 
-    std::vector<size_t> sample_positions = {0, 5};
+    std::vector<size_t> sample_positions = {parseSamplePosition(options.specificSample,
+        window_rows, window_columns)};
 
     while (sample_positions.size() < samples) {
         sample_positions.push_back(random_engine() % gradient_count);
     }
 
     // grad check over the sample positions
-    double epsilon    = 1.0e-4;
+    double epsilon    = options.epsilon;
     double difference = 0.0;
     double total      = 0.0;
 
@@ -318,45 +410,156 @@ void TestSimpleRecurrentOpsGradientCheck(prnn::RecurrentLayerDirection direction
 
     difference = (difference == 0.0 && total == 0.0) ? 0.0 : (difference / total);
 
-    assertGreaterThanOrEqual(difference, 3e-2 );
-    assertLessThanOrEqual(   difference, 1e-16);
+    assertLessThanOrEqual(    difference, 2e-1 );
+    assertGreaterThanOrEqual( difference, 1e-16);
 }
 
-void TestRecurrentOpsGradientCheckHelper(prnn::RecurrentLayerDirection d)
+void TestRecurrentOpsGradientCheck(const Options& options)
 {
-    TestSimpleRecurrentOpsGradientCheck(d);
+    Options newOptions = options;
+
+    newOptions.direction = prnn::RECURRENT_FORWARD;
+
+    TestSimpleRecurrentOpsGradientCheck(newOptions);
 }
 
-void TestRecurrentOpsGradientCheck()
+void TestReverseRecurrentOpsGradientCheck(const Options& options)
 {
-    TestRecurrentOpsGradientCheckHelper(prnn::RECURRENT_FORWARD);
+    Options newOptions = options;
+
+    newOptions.direction = prnn::RECURRENT_FORWARD;
+
+    TestSimpleRecurrentOpsGradientCheck(newOptions);
 }
 
-void TestReverseRecurrentOpsGradientCheck()
+void assertSuccess(prnnStatus_t status)
 {
-    TestRecurrentOpsGradientCheckHelper(prnn::RECURRENT_REVERSE);
+    if(status != PRNN_STATUS_SUCCESS)
+    {
+        throw std::logic_error(std::string("PRNN C interface call returned error: '") +
+            prnnGetErrorString(status) + "'");
+    }
 }
 
-void RunTest(const std::string& testName, void (*function)(void) )
+void TestCTensor(const Options& options)
 {
+    prnnTensorDescriptor_t descriptor;
+
+    assertSuccess(prnnCreateTensorDescriptor(&descriptor));
+
+    const int inputDimensions[3] = {static_cast<int>(options.layerSize),
+                                    static_cast<int>(options.miniBatchSize),
+                                    static_cast<int>(options.timesteps)};
+
+    const int inputStrides[3]    = {static_cast<int>(1),
+                                    static_cast<int>(options.layerSize),
+                                    static_cast<int>(options.layerSize * options.miniBatchSize)};
+
+    assertSuccess(prnnSetTensorNdDescriptor(descriptor,
+                                            PRNN_DATA_FLOAT,
+                                            3,
+                                            inputDimensions,
+                                            inputStrides));
+
+    int numberOfDimensions = 0;
+    int dimensions[PRNN_DIM_MAX];
+    int strides[PRNN_DIM_MAX];
+    prnnDataType_t dataType = PRNN_INVALID_DATA;
+
+    assertSuccess(prnnGetTensorNdDescriptor(descriptor,
+                                            PRNN_DIM_MAX,
+                                            &dataType,
+                                            &numberOfDimensions,
+                                            dimensions,
+                                            strides));
+
+    assertEqual(numberOfDimensions, 3);
+
+    assertEqual(dimensions[0], options.layerSize);
+    assertEqual(dimensions[1], options.miniBatchSize);
+    assertEqual(dimensions[2], options.timesteps);
+
+    assertEqual(strides[0], 1);
+    assertEqual(strides[1], options.layerSize);
+    assertEqual(strides[2], options.layerSize * options.miniBatchSize);
+
+    assertSuccess(prnnDestroyTensorDescriptor(descriptor));
+}
+
+void RunTest(const std::string& testName, void (*function)(const Options& options),
+    Options& options)
+{
+    if(options.failed && options.haltOnFailure)
+    {
+        return;
+    }
+
     try
     {
-        function();
+        function(options);
         std::cout << "Test '" << testName << "' Passed\n";
     }
     catch(std::exception& e)
     {
         std::cout << "Test '" << testName << "' Failed with error '" << e.what() << "'\n";
+        options.failed = true;
     }
 }
 
 int main(int argc, char** argv)
 {
-    prnn::util::enable_all_logs();
+    prnn::util::ArgumentParser parser(argc, argv);
 
-    //RunTest("Simple Recurrent Ops Test",            TestSimpleRecurrentOps              );
-    RunTest("Recurrent Forward Ops Gradient Check", TestRecurrentOpsGradientCheck       );
-    //RunTest("Recurrent Reverse Ops Gradient Check", TestReverseRecurrentOpsGradientCheck);
+    auto precision = prnn::matrix::SinglePrecision();
+
+    Options options;
+
+    options.layerSize = prnn::rnn::getMaximumSizeRNNForThisGPU(precision);
+    options.timesteps = 10;
+    options.verbose   = false;
+    options.epsilon   = 1.0e-3;
+
+    options.miniBatchSize = 3;
+    options.gradientCheckSamples = 32;
+
+    options.usePersistentBackProp = true;
+    options.usePersistentForwardProp = true;
+
+    options.haltOnFailure = true;
+
+    options.specificSample = "0,0";
+    options.skipConnectionScale = 0.5;
+
+    parser.parse("-t", "--timeteps",   options.timesteps,     options.timesteps,     "The number of timesteps to run the RNN for.");
+    parser.parse("-b", "--mini-batch", options.miniBatchSize, options.miniBatchSize, "The mini-batch size to run through the layer.");
+    parser.parse("-l", "--layer-size", options.layerSize,     options.layerSize,     "The size of the RNN layer to operate on.");
+    parser.parse("-e", "--epsilon",    options.epsilon,       options.epsilon,       "Epsilon used for the gradient check.");
+
+    parser.parse("", "--persistent-back",    options.usePersistentBackProp,    options.usePersistentBackProp,    "Use persistent kernels for back prop.");
+    parser.parse("", "--persistent-forward", options.usePersistentForwardProp, options.usePersistentForwardProp, "Use persistent kernels for forward prop.");
+
+    parser.parse("", "--specific-sample", options.specificSample, options.specificSample, "Specific weight to sample.");
+    parser.parse("", "--skip-connection-scale", options.skipConnectionScale, options.skipConnectionScale, "Scaling factor for skip connections.");
+
+    parser.parse("-s", "--grad-check-samples", options.gradientCheckSamples,
+        options.gradientCheckSamples, "The number of weights to perform gradient check on.");
+
+    parser.parse("", "--halt-on-failure", options.haltOnFailure,
+        options.haltOnFailure, "Abort on the first test failure.");
+
+    parser.parse("-v", "--verbose", options.verbose, options.verbose, "Enable all PRNN logs.");
+
+    parser.parse();
+
+    if(options.verbose)
+    {
+        prnn::util::enable_all_logs();
+    }
+
+    RunTest("C Interface Tensor Test",              TestCTensor,                          options);
+    RunTest("Recurrent Forward Ops Gradient Check", TestRecurrentOpsGradientCheck,        options);
+    RunTest("Simple Recurrent Ops Test",            TestSimpleRecurrentOps,               options);
+    //RunTest("Recurrent Reverse Ops Gradient Check", TestReverseRecurrentOpsGradientCheck, options);
 
     return 0;
 }

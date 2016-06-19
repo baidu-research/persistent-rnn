@@ -60,9 +60,10 @@ typedef struct prnnDropoutStruct* prnnDropoutDescriptor_t;
 */
 typedef enum
 {
-    PRNN_DATA_FLOAT  = 0,
-    PRNN_DATA_DOUBLE = 1,
-    PRNN_DATA_HALF   = 2,
+    PRNN_DATA_FLOAT   = 0,
+    PRNN_DATA_DOUBLE  = 1,
+    PRNN_DATA_HALF    = 2,
+    PRNN_INVALID_DATA = 3,
 } prnnDataType_t;
 
 /* Maximum supported number of tensor dimensions */
@@ -76,37 +77,6 @@ typedef enum
     PRNN_TENSOR_NCHW = 0,   /* row major (wStride = 1, hStride = w) */
     PRNN_TENSOR_NHWC = 1    /* feature maps interleaved ( cStride = 1 )*/
 } prnnTensorFormat_t;
-
-prnnStatus_t prnnSetTensor4dDescriptor(prnnTensorDescriptor_t tensorDesc,
-                                       prnnTensorFormat_t     format,
-                                       prnnDataType_t         dataType, // image data type
-                                       int                    n,        // number of inputs (batch size)
-                                       int                    c,        // number of input feature maps
-                                       int                    h,        // height of input section
-                                       int                    w);       // width of input section
-
-
-prnnStatus_t prnnSetTensor4dDescriptorEx(prnnTensorDescriptor_t tensorDesc,
-                                         prnnDataType_t         dataType, // image data type
-                                         int                    n,        // number of inputs (batch size)
-                                         int                    c,        // number of input feature maps
-                                         int                    h,        // height of input section
-                                         int                    w,        // width of input section
-                                         int                    nStride,
-                                         int                    cStride,
-                                         int                    hStride,
-                                         int                    wStride);
-
-prnnStatus_t prnnGetTensor4dDescriptor(const prnnTensorDescriptor_t tensorDesc,
-                                       prnnDataType_t*              dataType, // image data type
-                                       int*                         n,        // number of inputs (batch size)
-                                       int*                         c,        // number of input feature maps
-                                       int*                         h,        // height of input section
-                                       int*                         w,        // width of input section
-                                       int*                         nStride,
-                                       int*                         cStride,
-                                       int*                         hStride,
-                                       int*                         wStride);
 
 prnnStatus_t prnnSetTensorNdDescriptor(prnnTensorDescriptor_t tensorDesc,
                                        prnnDataType_t         dataType,
