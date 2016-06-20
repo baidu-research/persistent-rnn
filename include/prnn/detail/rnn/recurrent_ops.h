@@ -33,6 +33,13 @@ void backPropGradientsRecurrent(const matrix::DynamicView& dWeights,
     const matrix::ConstDynamicView& deltas,
     const matrix::ConstDynamicView& scratch, const RecurrentOpsHandle& handle);
 
+size_t getForwardPropScratchSize(const RecurrentOpsHandle& handle,
+    const matrix::Precision& precision);
+size_t getBackPropDeltasScratchSize(const RecurrentOpsHandle& handle,
+    const matrix::Precision& precision);
+size_t getBackPropGradientsScratchSize(const RecurrentOpsHandle& handle,
+    const matrix::Precision& precision);
+
 matrix::Matrix getForwardPropScratch(const RecurrentOpsHandle& handle,
     const matrix::Precision& precision);
 matrix::Matrix getBackPropDeltasScratch(const RecurrentOpsHandle& handle,

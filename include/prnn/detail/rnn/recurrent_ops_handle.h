@@ -51,8 +51,8 @@ class RecurrentOpsHandle
 {
 public:
     RecurrentOpsHandle(size_t layerSize, size_t miniBatchSize, size_t timesteps,
-        const RecurrentActivationFunction& activationFunction,
-        RecurrentLayerDirection direction,
+        const RecurrentActivationFunction& activationFunction = RecurrentRectifiedLinear(),
+        RecurrentLayerDirection direction = RECURRENT_FORWARD,
         bool allowPersistentKernels = true,
         double skipConnectionScale = 0.0,
         void* stream = nullptr) :

@@ -134,7 +134,7 @@ ConstFloatIterator Matrix::begin() const
 
 ConstFloatIterator Matrix::end() const
 {
-    return FloatIterator(precision(), size(), stride(), zeros(size()), _data_begin);
+    return FloatIterator(precision(), size(), stride(), size(), _data_begin);
 }
 
 std::shared_ptr<Allocation> Matrix::allocation()

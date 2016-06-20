@@ -158,42 +158,6 @@ static prnn::matrix::Precision getPrecision(prnnDataType_t dataType)
     }
 }
 
-prnnStatus_t prnnSetTensor4dDescriptor(prnnTensorDescriptor_t descriptor,
-                                       prnnTensorFormat_t     format,
-                                       prnnDataType_t         dataType,
-                                       int                    n,
-                                       int                    c,
-                                       int                    h,
-                                       int                    w)
-{
-    descriptor->format    = format;
-    descriptor->precision = getPrecision(dataType);
-    descriptor->size      = prnn::matrix::Dimension(w, h, c, n);
-    descriptor->stride    = prnn::matrix::linearStride(descriptor->size);
-
-    return PRNN_STATUS_SUCCESS;
-}
-
-
-prnnStatus_t prnnSetTensor4dDescriptorEx(prnnTensorDescriptor_t descriptor,
-                                         prnnDataType_t         dataType,
-                                         int                    n,
-                                         int                    c,
-                                         int                    h,
-                                         int                    w,
-                                         int                    nStride,
-                                         int                    cStride,
-                                         int                    hStride,
-                                         int                    wStride)
-{
-    descriptor->format    = PRNN_TENSOR_NCHW;
-    descriptor->precision = getPrecision(dataType);
-    descriptor->size      = prnn::matrix::Dimension(w, h, c, n);
-    descriptor->stride    = prnn::matrix::Dimension(wStride, hStride, cStride, nStride);
-
-    return PRNN_STATUS_SUCCESS;
-}
-
 static prnnDataType_t getDataType(const prnn::matrix::Precision& precision)
 {
     if(precision == prnn::matrix::HalfPrecision())
@@ -208,32 +172,6 @@ static prnnDataType_t getDataType(const prnn::matrix::Precision& precision)
     {
         return PRNN_DATA_DOUBLE;
     }
-}
-
-prnnStatus_t prnnGetTensor4dDescriptor(const prnnTensorDescriptor_t descriptor,
-                                       prnnDataType_t*              dataType,
-                                       int*                         n,
-                                       int*                         c,
-                                       int*                         h,
-                                       int*                         w,
-                                       int*                         nStride,
-                                       int*                         cStride,
-                                       int*                         hStride,
-                                       int*                         wStride)
-{
-    *dataType = getDataType(descriptor->precision);
-
-    *w = descriptor->size[0];
-    *h = descriptor->size[1];
-    *c = descriptor->size[2];
-    *n = descriptor->size[3];
-
-    *wStride = descriptor->stride[0];
-    *hStride = descriptor->stride[1];
-    *cStride = descriptor->stride[2];
-    *nStride = descriptor->stride[3];
-
-    return PRNN_STATUS_SUCCESS;
 }
 
 prnnStatus_t prnnSetTensorNdDescriptor(prnnTensorDescriptor_t descriptor,
@@ -354,12 +292,28 @@ prnnStatus_t prnnSetRNNDescriptor(prnnRNNDescriptor_t rnnDescriptor,
     return PRNN_STATUS_SUCCESS;
 }
 
-prnnStatus_t prnnGetRNNWorkspaceSize(prnnHandle_t handle,
+prnnStatus_t prnnGetRNNWorkspaceSize(prnnHandle_t cHandle,
                                      const prnnRNNDescriptor_t rnnDesc,
                                      const prnnTensorDescriptor_t* xDesc,
                                      size_t* sizeInBytes)
 {
-    return PRNN_STATUS_NOT_SUPPORTED;
+
+    if(xDesc == nullptr)
+    {
+        return PRNN_STATUS_INVALID_VALUE;
+    }
+
+    if((*xDesc)->size.size() != 3)
+    {
+        return PRNN_STATUS_INVALID_VALUE;
+    }
+
+    prnn::RecurrentOpsHandle handle(rnnDesc->hiddenSize, rnnDesc->sequenceLength,
+        (*xDesc)->size[1]);
+
+    *sizeInBytes = prnn::rnn::getForwardPropScratchSize(handle, (*xDesc)->precision);
+
+    return PRNN_STATUS_SUCCESS;
 }
 
 prnnStatus_t prnnGetRNNTrainingReserveSize(prnnHandle_t handle,
@@ -367,7 +321,9 @@ prnnStatus_t prnnGetRNNTrainingReserveSize(prnnHandle_t handle,
                                            const prnnTensorDescriptor_t* xDesc,
                                            size_t* sizeInBytes)
 {
-    return PRNN_STATUS_NOT_SUPPORTED;
+    *sizeInBytes = 0;
+
+    return PRNN_STATUS_SUCCESS;
 }
 
 
@@ -376,7 +332,10 @@ prnnStatus_t prnnGetRNNParamsSize(prnnHandle_t handle,
                                   const prnnTensorDescriptor_t* xDesc,
                                   size_t* sizeInBytes)
 {
-    return PRNN_STATUS_NOT_SUPPORTED;
+    *sizeInBytes = getPrecision(rnnDesc->dataType).size() *
+        rnnDesc->hiddenSize * rnnDesc->hiddenSize;
+
+    return PRNN_STATUS_SUCCESS;
 }
 
 prnnStatus_t prnnGetRNNLinLayerMatrixParams(prnnHandle_t handle,
@@ -407,6 +366,26 @@ prnnStatus_t prnnGetRNNLinLayerBiasParams(prnnHandle_t handle,
 
 static bool isSupported(prnnRNNDescriptor_t desc)
 {
+    if(desc->mode == PRNN_GRU || desc->mode == PRNN_LSTM)
+    {
+        return false;
+    }
+
+    if(desc->inputMode == PRNN_LINEAR_INPUT)
+    {
+        return false;
+    }
+
+    if(desc->direction == PRNN_BIDIRECTIONAL)
+    {
+        return false;
+    }
+
+    if(desc->dataType != PRNN_DATA_FLOAT)
+    {
+        return false;
+    }
+
     if(desc->hiddenSize > prnn::rnn::getMaximumSizeRNNForThisGPU(getPrecision(desc->dataType)))
     {
         return false;
@@ -624,8 +603,8 @@ prnnStatus_t prnnRNNBackwardWeights(prnnHandle_t handle,
         return PRNN_STATUS_NOT_SUPPORTED;
     }
 
-    auto activationsView = constructView(*yDesc,  y);
-    auto deltasView      = constructView(*xDesc,  x);
+    auto activationsView = constructView(*xDesc,  x);
+    auto deltasView      = constructView(*yDesc,  y);
     auto weightsView     = constructView(dwDesc, dw);
 
     size_t miniBatchSize = activationsView.size()[1];
