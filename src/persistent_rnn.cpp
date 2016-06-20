@@ -366,6 +366,26 @@ prnnStatus_t prnnGetRNNLinLayerBiasParams(prnnHandle_t handle,
 
 static bool isSupported(prnnRNNDescriptor_t desc)
 {
+    if(desc->mode == PRNN_GRU || desc->mode == PRNN_LSTM)
+    {
+        return false;
+    }
+
+    if(desc->inputMode == PRNN_LINEAR_INPUT)
+    {
+        return false;
+    }
+
+    if(desc->direction == PRNN_BIDIRECTIONAL)
+    {
+        return false;
+    }
+
+    if(desc->dataType != PRNN_DATA_FLOAT)
+    {
+        return false;
+    }
+
     if(desc->hiddenSize > prnn::rnn::getMaximumSizeRNNForThisGPU(getPrecision(desc->dataType)))
     {
         return false;
@@ -583,8 +603,8 @@ prnnStatus_t prnnRNNBackwardWeights(prnnHandle_t handle,
         return PRNN_STATUS_NOT_SUPPORTED;
     }
 
-    auto activationsView = constructView(*yDesc,  y);
-    auto deltasView      = constructView(*xDesc,  x);
+    auto activationsView = constructView(*xDesc,  x);
+    auto deltasView      = constructView(*yDesc,  y);
     auto weightsView     = constructView(dwDesc, dw);
 
     size_t miniBatchSize = activationsView.size()[1];
