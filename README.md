@@ -44,6 +44,11 @@ integrate with frameworks that already interface with cuDNN.  The cuDNN interfac
 general than the capabilities provided by this library, and API calls that attempt to use unsupported
 features will return PRNN_NOT_SUPPORTED, see the limitations section for details.
 
+## Implementation
+
+See [`include/prnn/detail/rnn/recurrent_ops_kernels.h`](include/prnn/detail/rnn/recurrent_ops_kernels.h) for
+the kernel implementations.
+
 ## Compilation
 
 prnn has been tested on Ubuntu 14.04 and OSX 10.10.  Windows is not supported
