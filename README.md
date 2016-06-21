@@ -17,7 +17,7 @@ Avoiding reloading layer weights multiple times makes persistent kernels very ef
 
 ![TitanX Performance](/doc/mb-scaling.png)
 
-Performance of the CUDA implementation is approximately 15x faster than an RNN implementation using CUBLAS for GEMM operations at a mini-batch size of 4.  There is still some room to improve performance compared with our previous implementation, which was written directly in assembly.
+Performance of the CUDA implementation is approximately 15x faster than an RNN implementation using CUBLAS for GEMM operations at a mini-batch size of 4.  There is still some room to improve performance compared with our previous implementation, which was written directly in assembly.  A CUDA implementation has the advantage that it is much easier to support more types of GPUs.
 
 ## Limitations in the current release
 
