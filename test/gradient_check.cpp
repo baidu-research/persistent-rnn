@@ -31,6 +31,7 @@ public:
     size_t layerSize;
     size_t miniBatchSize;
     size_t timesteps;
+    size_t layers;
 
 public:
     size_t gradientCheckSamples;
@@ -57,6 +58,7 @@ public:
 public:
     bool failed;
     bool haltOnFailure;
+    bool useCudnn;
 
 };
 
@@ -103,21 +105,22 @@ void TestSimpleRecurrentOps(const Options& options)
     size_t timesteps  = options.timesteps;
     size_t mini_batch = options.miniBatchSize;
 
-    prnn::RecurrentOpsHandle handle(layer_size, mini_batch, timesteps,
+    prnn::RecurrentOpsHandle handle(layer_size, mini_batch, timesteps, options.layers,
         prnn::RecurrentRectifiedLinear(), options.direction);
 
     auto weights     = ones({layer_size, layer_size}, precision);
     auto activations = ones({layer_size, mini_batch, timesteps}, precision);
+    auto reserve     = prnn::matrix::Matrix();
 
-    forwardPropRecurrent(activations, weights, handle);
+    forwardPropRecurrent(activations, reserve, weights, handle);
 
     auto deltas = ones(activations.size(), precision);
 
-    backPropDeltasRecurrent(deltas, weights, activations, handle);
+    backPropDeltasRecurrent(deltas, weights, activations, reserve, handle);
 
     auto dWeights = ones(weights.size(), precision);
 
-    backPropGradientsRecurrent(dWeights, activations, deltas, handle);
+    backPropGradientsRecurrent(dWeights, activations, deltas, reserve, handle);
 
     // just make sure nothing crashes
 }
@@ -275,9 +278,13 @@ void TestSimpleRecurrentOpsGradientCheck(const Options& options)
 
     samples = std::min(window_rows * window_columns, samples);
 
-    prnn::RecurrentOpsHandle handle(layer_size, mini_batch, timesteps,
+    prnn::RecurrentOpsHandle handle(layer_size, mini_batch, timesteps, options.layers,
         prnn::RecurrentRectifiedLinear(), options.direction,
-        options.usePersistentForwardProp, options.skipConnectionScale);
+        prnn::rnn::RECURRENT_SIMPLE_TYPE,
+        prnn::rnn::RECURRENT_SKIP_INPUT,
+        options.usePersistentForwardProp,
+        options.useCudnn,
+        options.skipConnectionScale);
 
     auto weights = zeros({layer_size, layer_size}, precision);
     auto weights_slice = slice(weights, {0, 0}, {window_rows, window_columns});
@@ -287,6 +294,7 @@ void TestSimpleRecurrentOpsGradientCheck(const Options& options)
     apply(weights, weights, prnn::matrix::Multiply(1.0e-2));
 
     auto input_activations = zeros({layer_size, mini_batch, timesteps}, precision);
+    auto reserve = prnn::matrix::Matrix();
 
     auto reference_activations = zeros({layer_size, mini_batch, timesteps}, precision);
 
@@ -311,7 +319,7 @@ void TestSimpleRecurrentOpsGradientCheck(const Options& options)
                              {window_outputs, mini_batch, timesteps})),
             {window_outputs, mini_batch * timesteps}).debugString();
 
-    forwardPropRecurrent(output_activations, weights, handle);
+    forwardPropRecurrent(output_activations, reserve, weights, handle);
 
     prnn::util::log("TestRecurrent") << "Output Activations " <<
         reshape(copy(slice(output_activations,
@@ -336,11 +344,11 @@ void TestSimpleRecurrentOpsGradientCheck(const Options& options)
 
     handle.allowPersistentKernels = options.usePersistentBackProp;
 
-    backPropDeltasRecurrent(deltas, weights, output_activations, handle);
+    backPropDeltasRecurrent(deltas, weights, output_activations, reserve, handle);
 
     auto dWeights = ones(weights.size(), precision);
 
-    backPropGradientsRecurrent(dWeights, output_activations, deltas, handle);
+    backPropGradientsRecurrent(dWeights, output_activations, deltas, reserve, handle);
 
     handle.allowPersistentKernels = options.usePersistentForwardProp;
 
@@ -380,7 +388,7 @@ void TestSimpleRecurrentOpsGradientCheck(const Options& options)
             << (original_value - epsilon) << "\n";
 
         auto copied_output_activations = copy(input_activations);
-        forwardPropRecurrent(copied_output_activations, weights, handle);
+        forwardPropRecurrent(copied_output_activations, reserve, weights, handle);
 
         prnn::util::log("TestRecurrent") << "Updated Output Activations " <<
             reshape(copy(slice(copied_output_activations,
@@ -399,7 +407,7 @@ void TestSimpleRecurrentOpsGradientCheck(const Options& options)
 
         copied_output_activations = copy(input_activations);
 
-        forwardPropRecurrent(copied_output_activations, weights, handle);
+        forwardPropRecurrent(copied_output_activations, reserve, weights, handle);
         prnn::util::log("TestRecurrent") << "Updated Output Activations " <<
             reshape(copy(slice(copied_output_activations,
                                {0,0,0},
@@ -593,8 +601,8 @@ void TestCForwardOps(const Options& options)
     auto precision = prnn::matrix::SinglePrecision();
 
     prnn::RecurrentOpsHandle highLevelHandle(options.layerSize, options.miniBatchSize,
-        options.timesteps, prnn::RecurrentRectifiedLinear(), options.direction,
-        options.usePersistentForwardProp, 0.0);
+        options.timesteps, options.layers, prnn::RecurrentRectifiedLinear(), options.direction,
+        options.usePersistentForwardProp, options.useCudnn, 0.0);
 
     auto weights = rand({options.layerSize, options.layerSize}, precision);
 
@@ -602,10 +610,11 @@ void TestCForwardOps(const Options& options)
 
     auto inputActivations = rand({options.layerSize, options.miniBatchSize, options.timesteps},
         precision);
+    auto reserve = prnn::matrix::Matrix();
 
     auto referenceActivations = copy(inputActivations);
 
-    forwardPropRecurrent(referenceActivations, weights, highLevelHandle);
+    forwardPropRecurrent(referenceActivations, reserve, weights, highLevelHandle);
 
     prnnHandle_t handle;
 
@@ -711,8 +720,8 @@ void TestCDeltaOps(const Options& options)
     auto precision = prnn::matrix::SinglePrecision();
 
     prnn::RecurrentOpsHandle highLevelHandle(options.layerSize, options.miniBatchSize,
-        options.timesteps, prnn::RecurrentRectifiedLinear(), options.direction,
-        options.usePersistentForwardProp, 0.0);
+        options.timesteps, options.layers, prnn::RecurrentRectifiedLinear(), options.direction,
+        options.usePersistentForwardProp, options.useCudnn, 0.0);
 
     auto weights = rand({options.layerSize, options.layerSize}, precision);
 
@@ -722,10 +731,11 @@ void TestCDeltaOps(const Options& options)
         precision);
     auto deltas = rand({options.layerSize, options.miniBatchSize, options.timesteps},
         precision);
+    auto reserve = prnn::matrix::Matrix();
 
     auto referenceDeltas = copy(deltas);
 
-    backPropDeltasRecurrent(referenceDeltas, weights, inputActivations, highLevelHandle);
+    backPropDeltasRecurrent(referenceDeltas, weights, inputActivations, reserve, highLevelHandle);
 
     prnnHandle_t handle;
 
@@ -848,8 +858,8 @@ void TestCGradientOps(const Options& options)
     auto precision = prnn::matrix::SinglePrecision();
 
     prnn::RecurrentOpsHandle highLevelHandle(options.layerSize, options.miniBatchSize,
-        options.timesteps, prnn::RecurrentRectifiedLinear(), options.direction,
-        options.usePersistentForwardProp, 0.0);
+        options.timesteps, options.layers, prnn::RecurrentRectifiedLinear(), options.direction,
+        options.usePersistentForwardProp, options.useCudnn, 0.0);
 
     auto dWeights = ones({options.layerSize, options.layerSize}, precision);
 
@@ -857,10 +867,12 @@ void TestCGradientOps(const Options& options)
         precision);
     auto deltas = rand({options.layerSize, options.miniBatchSize, options.timesteps},
         precision);
+    auto reserve = prnn::matrix::Matrix();
 
     auto referenceDWeights = copy(dWeights);
 
-    backPropGradientsRecurrent(referenceDWeights, inputActivations, deltas, highLevelHandle);
+    backPropGradientsRecurrent(referenceDWeights, inputActivations, deltas, reserve,
+        highLevelHandle);
 
     prnnHandle_t handle;
 
@@ -994,12 +1006,13 @@ int main(int argc, char** argv)
 
     Options options;
 
-    options.layerSize = prnn::rnn::getMaximumSizeRNNForThisGPU(precision);
-    options.timesteps = 10;
-    options.verbose   = false;
-    options.epsilon   = 1.0e-3;
-
+    options.layerSize     = prnn::rnn::getMaximumSizeRNNForThisGPU(precision);
     options.miniBatchSize = 3;
+    options.timesteps     = 10;
+    options.layers        = 1;
+    options.verbose       = false;
+    options.epsilon       = 1.0e-3;
+
     options.gradientCheckSamples = 32;
 
     options.usePersistentBackProp = true;
@@ -1013,10 +1026,12 @@ int main(int argc, char** argv)
     parser.parse("-t", "--timeteps",   options.timesteps,     options.timesteps,     "The number of timesteps to run the RNN for.");
     parser.parse("-b", "--mini-batch", options.miniBatchSize, options.miniBatchSize, "The mini-batch size to run through the layer.");
     parser.parse("-l", "--layer-size", options.layerSize,     options.layerSize,     "The size of the RNN layer to operate on.");
+    parser.parse("-n", "--layers",     options.layers,        options.layers,        "The number of RNN layers to stack.");
     parser.parse("-e", "--epsilon",    options.epsilon,       options.epsilon,       "Epsilon used for the gradient check.");
 
     parser.parse("", "--persistent-back",    options.usePersistentBackProp,    options.usePersistentBackProp,    "Use persistent kernels for back prop.");
     parser.parse("", "--persistent-forward", options.usePersistentForwardProp, options.usePersistentForwardProp, "Use persistent kernels for forward prop.");
+    parser.parse("", "--use-cudnn", options.useCudnn, options.useCudnn, "Use CUDNN as the backend for recurrent ops instead of this library.");
 
     parser.parse("", "--specific-sample", options.specificSample, options.specificSample, "Specific weight to sample.");
     parser.parse("", "--skip-connection-scale", options.skipConnectionScale, options.skipConnectionScale, "Scaling factor for skip connections.");

@@ -14,7 +14,21 @@ namespace prnn
 enum RecurrentLayerDirection
 {
     RECURRENT_FORWARD,
-    RECURRENT_REVERSE
+    RECURRENT_REVERSE,
+    RECURRENT_BIDIRECTIONAL
+};
+
+enum RecurrentLayerType
+{
+    RECURRENT_SIMPLE_TYPE,
+    RECURRENT_GRU_TYPE,
+    RECURRENT_LSTM_TYPE
+};
+
+enum RecurrentLayerInputMode
+{
+    RECURRENT_LINEAR_INPUT,
+    RECURRENT_SKIP_INPUT
 };
 
 class RecurrentActivationFunction
@@ -51,9 +65,13 @@ class RecurrentOpsHandle
 {
 public:
     RecurrentOpsHandle(size_t layerSize, size_t miniBatchSize, size_t timesteps,
+        size_t layers = 1,
         const RecurrentActivationFunction& activationFunction = RecurrentRectifiedLinear(),
         RecurrentLayerDirection direction = RECURRENT_FORWARD,
+        RecurrentLayerType layerType = RECURRENT_SIMPLE_TYPE,
+        RecurrentLayerInputMode inputMode = RECURRENT_SKIP_INPUT,
         bool allowPersistentKernels = true,
+        bool useCudnn = false,
         double skipConnectionScale = 0.0,
         void* stream = nullptr) :
 
@@ -61,9 +79,11 @@ public:
         miniBatchSize(miniBatchSize),
         timesteps(timesteps),
         allowPersistentKernels(allowPersistentKernels),
+        useCudnn(useCudnn),
         skipConnectionScale(skipConnectionScale),
         activationFunction(activationFunction),
         direction(direction),
+        layerType(layerType),
         stream(stream)
     {}
 
@@ -71,12 +91,22 @@ public:
     size_t layerSize;
     size_t miniBatchSize;
     size_t timesteps;
-    bool   allowPersistentKernels;
+
+public:
+    size_t layers;
+
+public:
+    bool allowPersistentKernels;
+    bool useCudnn;
+
+public:
     double skipConnectionScale;
 
 public:
     RecurrentActivationFunction activationFunction;
     RecurrentLayerDirection     direction;
+    RecurrentLayerType          layerType;
+    RecurrentLayerInputMode     inputMode;
 
 public:
     void* stream;

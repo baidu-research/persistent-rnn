@@ -29,15 +29,18 @@ static double getFlopCount(prnn::RecurrentOpsHandle& handle)
 }
 
 void benchmarkRnnForward(size_t iterations, size_t layerSize, size_t miniBatchSize,
-    size_t timesteps, bool usePersistent, const prnn::matrix::Precision& precision) {
+    size_t timesteps, size_t layers, bool usePersistent, bool useCudnn, const prnn::matrix::Precision& precision) {
 
     auto weights     = prnn::matrix::rand({layerSize, layerSize               }, precision);
     auto activations = prnn::matrix::rand({layerSize, miniBatchSize, timesteps}, precision);
 
-    prnn::RecurrentOpsHandle handle(layerSize, miniBatchSize, timesteps,
+    prnn::RecurrentOpsHandle handle(layerSize, miniBatchSize, timesteps, layers,
         prnn::RecurrentRectifiedLinear(),
         prnn::RECURRENT_FORWARD,
-        usePersistent);
+        prnn::RECURRENT_SIMPLE_TYPE,
+        prnn::RECURRENT_SKIP_INPUT,
+        usePersistent,
+        useCudnn);
 
     auto scratch = prnn::rnn::getForwardPropScratch(handle, precision);
 
@@ -71,16 +74,20 @@ void benchmarkRnnForward(size_t iterations, size_t layerSize, size_t miniBatchSi
 }
 
 void benchmarkRnnReverse(size_t iterations, size_t layerSize, size_t miniBatchSize,
-    size_t timesteps, bool usePersistent, const prnn::matrix::Precision& precision)
+    size_t timesteps, size_t layers, bool usePersistent, bool useCudnn,
+    const prnn::matrix::Precision& precision)
 {
     auto weights     = prnn::matrix::rand({layerSize, layerSize               }, precision);
     auto activations = prnn::matrix::rand({layerSize, miniBatchSize, timesteps}, precision);
     auto deltas      = prnn::matrix::rand({layerSize, miniBatchSize, timesteps}, precision);
 
-    prnn::RecurrentOpsHandle handle(layerSize, miniBatchSize, timesteps,
+    prnn::RecurrentOpsHandle handle(layerSize, miniBatchSize, timesteps, layers,
         prnn::RecurrentRectifiedLinear(),
         prnn::RECURRENT_FORWARD,
-        usePersistent);
+        prnn::RECURRENT_SIMPLE_TYPE,
+        prnn::RECURRENT_SKIP_INPUT,
+        usePersistent,
+        useCudnn);
 
     auto scratch = prnn::rnn::getBackPropDeltasScratch(handle, precision);
 
@@ -122,10 +129,13 @@ void benchmarkRnnGradients(size_t iterations, size_t layerSize, size_t miniBatch
     auto activations = prnn::matrix::rand({layerSize, miniBatchSize, timesteps}, precision);
     auto deltas      = prnn::matrix::rand({layerSize, miniBatchSize, timesteps}, precision);
 
-    prnn::RecurrentOpsHandle handle(layerSize, miniBatchSize, timesteps,
+    prnn::RecurrentOpsHandle handle(layerSize, miniBatchSize, timesteps, layers,
         prnn::RecurrentRectifiedLinear(),
         prnn::RECURRENT_FORWARD,
-        usePersistent);
+        prnn::RECURRENT_SIMPLE_TYPE,
+        prnn::RECURRENT_SKIP_INPUT,
+        usePersistent,
+        useCudnn);
 
     auto scratch = prnn::rnn::getBackPropGradientsScratch(handle, precision);
 
@@ -166,9 +176,9 @@ void benchmarkRnnGradients(size_t iterations, size_t layerSize, size_t miniBatch
 void runBenchmark(size_t iterations, size_t layerSize, size_t miniBatchSize,
     size_t timesteps, bool usePersistent, prnn::matrix::Precision& precision)
 {
-    benchmarkRnnForward(  iterations, layerSize, miniBatchSize, timesteps, usePersistent, precision);
-    benchmarkRnnReverse(  iterations, layerSize, miniBatchSize, timesteps, usePersistent, precision);
-    benchmarkRnnGradients(iterations, layerSize, miniBatchSize, timesteps, usePersistent, precision);
+    benchmarkRnnForward(  iterations, layerSize, miniBatchSize, timesteps, layers, usePersistent, useCudnn, precision);
+    benchmarkRnnReverse(  iterations, layerSize, miniBatchSize, timesteps, layers, usePersistent, useCudnn, precision);
+    benchmarkRnnGradients(iterations, layerSize, miniBatchSize, timesteps, layers, usePersistent, useCudnn, precision);
 }
 
 int main(int argc, char** argv) {
@@ -181,12 +191,15 @@ int main(int argc, char** argv) {
     size_t layerSize      = prnn::rnn::getMaximumSizeRNNForThisGPU(precision);
     size_t miniBatcheSize = 2;
     size_t timesteps      = 64;
+    size_t layers         = 1;
     bool   usePersistent  = true;
+    bool   useCudnn       = true;
 
     parser.parse("-i", "--iterations",      iterations,     iterations,     "Iterations to run each recurrent operation.");
     parser.parse("-l", "--layer-size",      layerSize,      layerSize,      "The size of the recurrent layer.");
     parser.parse("-b", "--mini-batch-size", miniBatcheSize, miniBatcheSize, "The number of utterances per mini-batch.");
     parser.parse("-t", "--timesteps",       timesteps,      timesteps,      "The length of each utterance.");
+    parser.parse("-l", "--layers",          layers,         layers,         "The number of recurrent layers to stack.");
     parser.parse("-p", "--no-peristent",    usePersistent,  usePersistent,  "Disable use of persistent kernels.");
 
     parser.parse();

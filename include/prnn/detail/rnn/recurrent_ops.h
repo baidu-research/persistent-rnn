@@ -22,16 +22,20 @@ size_t getMaximumSizeRNNForThisGPU(const matrix::Precision&);
 void forwardPropRecurrent(
     const matrix::DynamicView& activations,
     const matrix::ConstDynamicView& weights,
-    const matrix::DynamicView& scratch, const RecurrentOpsHandle& handle);
+    const matrix::DynamicView& scratch,
+    const matrix::DynamicView& reserve, const RecurrentOpsHandle& handle);
 
 void backPropDeltasRecurrent(const matrix::DynamicView& deltas,
     const matrix::ConstDynamicView& weights, const matrix::ConstDynamicView& activations,
-    const matrix::DynamicView& scratch, const RecurrentOpsHandle& handle);
+    const matrix::DynamicView& scratch, const matrix::ConstDynamicView& reserve,
+    const RecurrentOpsHandle& handle);
 
 void backPropGradientsRecurrent(const matrix::DynamicView& dWeights,
     const matrix::ConstDynamicView& activations,
     const matrix::ConstDynamicView& deltas,
-    const matrix::ConstDynamicView& scratch, const RecurrentOpsHandle& handle);
+    const matrix::ConstDynamicView& scratch,
+    const matrix::ConstDynamicView& reserve,
+    const RecurrentOpsHandle& handle);
 
 size_t getForwardPropScratchSize(const RecurrentOpsHandle& handle,
     const matrix::Precision& precision);

@@ -16,7 +16,9 @@ namespace prnn
 {
 
 void forwardPropRecurrent(matrix::Matrix& activations,
-    const matrix::Matrix& weights, const RecurrentOpsHandle& handle)
+    matrix::Matrix& reserve,
+    const matrix::Matrix& weights,
+    const RecurrentOpsHandle& handle)
 {
     auto scratch = prnn::rnn::getForwardPropScratch(handle, activations.precision());
 
@@ -24,12 +26,15 @@ void forwardPropRecurrent(matrix::Matrix& activations,
 
     prnn::rnn::forwardPropRecurrent(matrix::DynamicView(activations),
         matrix::ConstDynamicView(weights),
-        matrix::DynamicView(scratch), handle);
+        matrix::DynamicView(scratch),
+        matrix::DynamicView(reserve),
+        handle);
 }
 
 void backPropDeltasRecurrent(matrix::Matrix& deltas,
     const matrix::Matrix& weights,
     const matrix::Matrix& activationsData,
+    const matrix::Matrix& reserve,
     const RecurrentOpsHandle& handle)
 {
     auto activations = activationsData;
@@ -42,12 +47,14 @@ void backPropDeltasRecurrent(matrix::Matrix& deltas,
         matrix::ConstDynamicView(weights),
         matrix::DynamicView(activations),
         matrix::DynamicView(scratch),
+        matrix::ConstDynamicView(reserve),
         handle);
 }
 
 void backPropGradientsRecurrent(matrix::Matrix& dWeights,
     const matrix::Matrix& activations,
     const matrix::Matrix& deltas,
+    const matrix::Matrix& reserve,
     const RecurrentOpsHandle& handle)
 {
     auto scratch = prnn::rnn::getBackPropGradientsScratch(handle,
@@ -56,7 +63,9 @@ void backPropGradientsRecurrent(matrix::Matrix& dWeights,
     prnn::rnn::backPropGradientsRecurrent(matrix::DynamicView(dWeights),
         matrix::ConstDynamicView(activations),
         matrix::ConstDynamicView(deltas),
-        matrix::DynamicView(scratch), handle);
+        matrix::DynamicView(scratch),
+        matrix::ConstDynamicView(reserve),
+        handle);
 }
 
 }

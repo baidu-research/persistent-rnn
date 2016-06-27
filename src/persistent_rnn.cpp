@@ -13,6 +13,7 @@
 #include <prnn/detail/matrix/matrix.h>
 #include <prnn/detail/matrix/matrix_view.h>
 #include <prnn/detail/matrix/dimension_transformations.h>
+#include <prnn/detail/matrix/cudnn_library.h>
 
 // Standard Library Includes
 #include <new>
@@ -78,6 +79,9 @@ const char* prnnGetErrorString(prnnStatus_t status)
 
 struct prnnContext
 {
+public:
+    prnnContext() : stream(nullptr) {}
+
 public:
     void* stream;
 };
@@ -452,24 +456,62 @@ static prnn::RecurrentActivationFunction getActivationFunction(prnnRNNMode_t mod
 
 static prnn::RecurrentLayerDirection getDirection(prnnDirectionMode_t mode)
 {
-    return prnn::RECURRENT_FORWARD;
+    if(mode == PRNN_UNIDIRECTIONAL)
+    {
+        return prnn::RECURRENT_FORWARD;
+    }
+    else
+    {
+        return prnn::RECURRENT_BIDIRECTIONAL;
+    }
+}
+
+static prnn::RecurrentLayerType getLayerType(prnnRNNMode_t mode)
+{
+    if(mode == PRNN_RNN_RELU || mode == PRNN_RNN_TANH)
+    {
+        return prnn::RECURRENT_SIMPLE_TYPE;
+    }
+    else if(mode == PRNN_GRU)
+    {
+        return prnn::RECURRENT_GRU_TYPE;
+    }
+    else
+    {
+        return prnn::RECURRENT_LSTM_TYPE;
+    }
+}
+
+static prnn::RecurrentLayerInputMode getLayerInputMode(prnnRNNInputMode_t mode)
+{
+    if(mode == PRNN_LINEAR_INPUT)
+    {
+        return prnn::RECURRENT_LINEAR_INPUT;
+    }
+    else
+    {
+        return prnn::RECURRENT_SKIP_INPUT;
+    }
 }
 
 static prnn::RecurrentOpsHandle constructHandle(prnnHandle_t handle,
     const prnnRNNDescriptor_t rnnDesc, size_t miniBatchSize, size_t timesteps)
 {
     return prnn::RecurrentOpsHandle(rnnDesc->hiddenSize, miniBatchSize, timesteps,
+        rnnDesc->numberOfLayers,
         getActivationFunction(rnnDesc->mode),
-        getDirection(rnnDesc->direction));
+        getDirection(rnnDesc->direction),
+        getLayerType(rnnDesc->mode),
+        getLayerInputMode(rnnDesc->inputMode));
 }
 
-static prnn::matrix::DynamicView getScratchView(void* workspace, size_t size,
+static prnn::matrix::DynamicView getView(void* workspace, size_t size,
     const prnn::matrix::Precision& precision)
 {
     return prnn::matrix::DynamicView(workspace, {size}, {1}, precision);
 }
 
-static prnn::matrix::ConstDynamicView getScratchView(const void* workspace, size_t size,
+static prnn::matrix::ConstDynamicView getView(const void* workspace, size_t size,
     const prnn::matrix::Precision& precision)
 {
     return prnn::matrix::ConstDynamicView(workspace, {size}, {1}, precision);
@@ -515,10 +557,14 @@ prnnStatus_t prnnRNNForward(prnnHandle_t handle,
 
     auto opsHandle = constructHandle(handle, rnnDesc, miniBatchSize, timesteps);
 
-    auto scratchView = getScratchView(workspace, workSpaceSizeInBytes,
+    auto scratchView = getView(workspace, workSpaceSizeInBytes,
         activationsView.precision());
 
-    prnn::rnn::forwardPropRecurrent(activationsView, weightsView, scratchView, opsHandle);
+    auto reserveView = getView(reserveSpace, reserveSpaceSizeInBytes,
+        activationsView.precision());
+
+    prnn::rnn::forwardPropRecurrent(activationsView, weightsView,
+        scratchView, reserveView, opsHandle);
 
     return PRNN_STATUS_SUCCESS;
 }
@@ -569,11 +615,14 @@ prnnStatus_t prnnRNNBackwardData(prnnHandle_t handle,
 
     auto opsHandle = constructHandle(handle, rnnDesc, miniBatchSize, timesteps);
 
-    auto scratchView = getScratchView(workspace, workSpaceSizeInBytes,
+    auto scratchView = getView(workspace, workSpaceSizeInBytes,
+        activationsView.precision());
+
+    auto reserveView = getView(reserveSpace, reserveSpaceSizeInBytes,
         activationsView.precision());
 
     prnn::rnn::backPropDeltasRecurrent(deltasView, weightsView, activationsView,
-        scratchView, opsHandle);
+        scratchView, reserveView, opsHandle);
 
     return PRNN_STATUS_SUCCESS;
 }
@@ -612,11 +661,14 @@ prnnStatus_t prnnRNNBackwardWeights(prnnHandle_t handle,
 
     auto opsHandle = constructHandle(handle, rnnDesc, miniBatchSize, timesteps);
 
-    auto scratchView = getScratchView(workspace, workSpaceSizeInBytes,
+    auto scratchView = getView(workspace, workSpaceSizeInBytes,
+        activationsView.precision());
+
+    auto reserveView = getView(reserveSpace, reserveSpaceSizeInBytes,
         activationsView.precision());
 
     prnn::rnn::backPropGradientsRecurrent(weightsView, activationsView, deltasView,
-        scratchView, opsHandle);
+        scratchView, reserveView, opsHandle);
 
     return PRNN_STATUS_SUCCESS;
 }

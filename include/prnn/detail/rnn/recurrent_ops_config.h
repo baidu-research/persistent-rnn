@@ -16,8 +16,14 @@ typedef int32_t index_t;
 typedef prnn::types::float16 float16;
 typedef prnn::RecurrentLayerDirection RecurrentLayerDirection;
 
-__device__ constexpr index_t align(index_t address, index_t alignment) {
+__device__ constexpr index_t align(index_t address, index_t alignment)
+{
     return address % alignment == 0 ? address : address + alignment - address % alignment;
+}
+
+__device__ constexpr index_t get_max(index_t l, index_t r)
+{
+    return l < r ? r : l;
 }
 
 template<
@@ -98,6 +104,11 @@ public:
     };
 
     enum {
+        MAXIMUM_LAYER_SIZE = get_max(GRID_TILE_ROWS, GRID_TILE_COLUMNS),
+        EXPANDED_LAYER_SIZE = get_max(EXPANDED_GRID_TILE_ROWS, EXPANDED_GRID_TILE_COLUMNS)
+    };
+
+    enum {
         DIRECTION = Direction
     };
 
@@ -116,15 +127,18 @@ __device__ constexpr index_t get_next_power_of_two(
             ;
 }
 
-__device__ constexpr index_t get_min(index_t left, index_t right) {
+__device__ constexpr index_t get_min(index_t left, index_t right)
+{
     return left < right ? left : right;
 }
 
-__device__ constexpr index_t get_log2(index_t n, index_t p = 0) {
+__device__ constexpr index_t get_log2(index_t n, index_t p = 0)
+{
     return (n <= 1) ? p : get_log2(n / 2, p + 1);
 }
 
-__device__ constexpr index_t evenly_divisible(index_t n, index_t d) {
+__device__ constexpr index_t evenly_divisible(index_t n, index_t d)
+{
     return n % d == 0 ? d : evenly_divisible(n, d/2);
 }
 

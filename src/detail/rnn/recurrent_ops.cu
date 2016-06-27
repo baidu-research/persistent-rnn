@@ -6,6 +6,7 @@
 #include <prnn/detail/matrix/matrix_operations.h>
 #include <prnn/detail/matrix/blas_operations.h>
 #include <prnn/detail/matrix/operation.h>
+#include <prnn/detail/matrix/cudnn_library.h>
 
 #include <prnn/detail/parallel/cuda.h>
 
@@ -15,6 +16,7 @@
 #include <prnn/detail/rnn/recurrent_ops_config.h>
 #include <prnn/detail/rnn/recurrent_ops_handle.h>
 #include <prnn/detail/rnn/recurrent_ops_kernels.h>
+#include <prnn/detail/rnn/cudnn_ops.h>
 
 namespace prnn
 {
@@ -37,17 +39,17 @@ public:
 #if CUDA_ARCH_MAJOR == 6
 
 template<RecurrentLayerDirection direction, typename T>
-class TileSelector<direction, T, 60, 6>
+class TileSelector<direction, T, 56, 6>
 {
 public:
-    typedef TileConfig<60, 1820, 1820, 96, 96, 12, 12, direction, T> TileSize;
+    typedef TileConfig<56, 1792, 1792, 224, 256, 7, 32, direction, T> TileSize;
 };
 
 template<RecurrentLayerDirection direction>
-class TileSelector<direction, float16, 60, 6>
+class TileSelector<direction, float16, 56, 6>
 {
 public:
-    typedef TileConfig<60, 2720, 2720, 352, 352, 22, 22, direction, T> TileSize;
+    typedef TileConfig<56, 2432, 2560, 352, 320, 11, 16, direction, T> TileSize;
 };
 
 #endif
@@ -86,23 +88,23 @@ public:
             if(precision == matrix::HalfPrecision())
             {
                 maxSize = TileSelector<prnn::RECURRENT_FORWARD,
-                    float16, 60, 6>::TileSize::GRID_TILE_ROWS;
+                    float16, 56, 6>::TileSize::MAXIMUM_LAYER_SIZE;
             }
             else
             {
                 maxSize = TileSelector<prnn::RECURRENT_FORWARD,
-                    float, 60, 6>::TileSize::GRID_TILE_ROWS;
+                    float, 56, 6>::TileSize::MAXIMUM_LAYER_SIZE;
             }
         }
         else if(streamingMultiprocessorVersionMajor == 5 && streamingMultiprocessorCount >= 24)
         {
             maxSize = TileSelector<prnn::RECURRENT_FORWARD,
-                float, 24, 5>::TileSize::GRID_TILE_ROWS;
+                float, 24, 5>::TileSize::MAXIMUM_LAYER_SIZE;
         }
         else
         {
             maxSize = TileSelector<prnn::RECURRENT_FORWARD,
-                float, 1, 0>::TileSize::GRID_TILE_ROWS;
+                float, 1, 0>::TileSize::MAXIMUM_LAYER_SIZE;
         }
 
         util::log("RecurrentOperations") << "major " << streamingMultiprocessorVersionMajor
@@ -121,23 +123,23 @@ public:
             if(precision == matrix::HalfPrecision())
             {
                 maxSize = TileSelector<prnn::RECURRENT_FORWARD,
-                    float16, 60, 6>::TileSize::EXPANDED_GRID_TILE_ROWS;
+                    float16, 56, 6>::TileSize::EXPANDED_LAYER_SIZE;
             }
             else
             {
                 maxSize = TileSelector<prnn::RECURRENT_FORWARD,
-                    float, 60, 6>::TileSize::EXPANDED_GRID_TILE_ROWS;
+                    float, 56, 6>::TileSize::EXPANDED_LAYER_SIZE;
             }
         }
         else if(streamingMultiprocessorVersionMajor == 5 && streamingMultiprocessorCount >= 24)
         {
             maxSize = TileSelector<prnn::RECURRENT_FORWARD,
-                float, 24, 5>::TileSize::EXPANDED_GRID_TILE_ROWS;
+                float, 24, 5>::TileSize::EXPANDED_LAYER_SIZE;
         }
         else
         {
             maxSize = TileSelector<prnn::RECURRENT_FORWARD,
-                float, 1, 0>::TileSize::EXPANDED_GRID_TILE_ROWS;
+                float, 1, 0>::TileSize::EXPANDED_LAYER_SIZE;
         }
 
         return maxSize;
@@ -447,20 +449,28 @@ void genericForwardPropRecurrent(
 void forwardPropRecurrent(
     const matrix::DynamicView& activations,
     const matrix::ConstDynamicView& weights,
-    const matrix::DynamicView& scratch, const RecurrentOpsHandle& handle)
+    const matrix::DynamicView& scratch,
+    const matrix::DynamicView& reserve,
+    const RecurrentOpsHandle& handle)
 {
-    if(!parallel::isCudaEnabled() || !handle.allowPersistentKernels)
-    {
-        detail::genericForwardPropRecurrent(activations, weights, handle);
-        return;
-    }
-
     assert(activations.precision() == weights.precision());
     assert(activations.precision() == scratch.precision());
+    assert(activations.precision() == reserve.precision());
 
-    zeros(scratch);
+    if(matrix::CudnnLibrary::isSupported() && handle.useCudnn)
+    {
+        cudnnForwardPropRecurrent(activations, weights, scratch, reserve, handle);
+    }
+    else if(parallel::isCudaEnabled() && handle.allowPersistentKernels)
+    {
+        zeros(scratch);
 
-    detail::forwardPropRecurrentOverActivationFunctions(activations, weights, scratch, handle);
+        detail::forwardPropRecurrentOverActivationFunctions(activations, weights, scratch, handle);
+    }
+    else
+    {
+        detail::genericForwardPropRecurrent(activations, weights, handle);
+    }
 }
 
 namespace detail
@@ -715,24 +725,34 @@ void genericBackPropDeltasRecurrent(const matrix::DynamicView& deltas,
 
 void backPropDeltasRecurrent(const matrix::DynamicView& deltas,
     const matrix::ConstDynamicView& weights, const matrix::ConstDynamicView& activations,
-    const matrix::DynamicView& scratch, const RecurrentOpsHandle& handle)
+    const matrix::DynamicView& scratch,
+    const matrix::DynamicView& reserve, const RecurrentOpsHandle& handle)
 {
-    if(!parallel::isCudaEnabled() || !handle.allowPersistentKernels)
+    if(matrix::CudnnLibrary::isSupported() && handle.useCudnn)
+    {
+        cudnnBackPropDeltasRecurrent(deltas, weights, activations, scratch, reserve,
+            handle);
+    }
+    else if(parallel::isCudaEnabled() && handle.allowPersistentKernels)
+    {
+        zeros(scratch);
+
+        detail::backPropDeltasRecurrentOverActivationFunctions(deltas, weights, activations,
+            scratch, handle);
+    }
+    else
     {
         detail::genericBackPropDeltasRecurrent(deltas, weights, activations, handle);
-        return;
     }
-
-    zeros(scratch);
-
-    detail::backPropDeltasRecurrentOverActivationFunctions(deltas, weights, activations,
-        scratch, handle);
 }
+
+namespace detail
+{
 
 void backPropGradientsRecurrent(const matrix::DynamicView& dWeights,
     const matrix::ConstDynamicView& outputActivations,
     const matrix::ConstDynamicView& deltas,
-    const matrix::ConstDynamicView& scratch, const RecurrentOpsHandle& handle)
+    const RecurrentOpsHandle& handle)
 {
     bool reversed = (handle.direction == prnn::RECURRENT_REVERSE);
 
@@ -760,6 +780,26 @@ void backPropGradientsRecurrent(const matrix::DynamicView& dWeights,
 
 }
 
+} // namespace detail
+
+void backPropGradientsRecurrent(const matrix::DynamicView& dWeights,
+    const matrix::ConstDynamicView& outputActivations,
+    const matrix::ConstDynamicView& deltas,
+    const matrix::ConstDynamicView& scratch,
+    const matrix::ConstDynamicView& reserve,
+    const RecurrentOpsHandle& handle)
+{
+    if(matrix::CudnnLibrary::isSupported() && handle.useCudnn)
+    {
+        cudnnBackPropGradientsRecurrent(dWeights, outputActivations, deltas,
+            scratch, reserve, handle);
+    }
+    else
+    {
+        detail::backPropGradientsRecurrent(dWeights, outputActivations, deltas, handle);
+    }
+}
+
 static matrix::Dimension extendDimensions(const matrix::Dimension& dimensions,
     const matrix::Precision& precision)
 {
@@ -785,8 +825,6 @@ size_t getForwardPropScratchSize(const RecurrentOpsHandle& handle,
     const matrix::Precision& precision)
 {
     matrix::Dimension dimension(handle.layerSize, handle.miniBatchSize, handle.timesteps);
-
-    auto scratchDimension = extendDimensions(dimension, precision);
 
     return precision.size() * dimension.product();
 }

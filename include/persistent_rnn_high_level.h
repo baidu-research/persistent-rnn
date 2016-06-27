@@ -14,20 +14,25 @@ namespace prnn {
 
 /** \brief Forward propagate through a recurrent weight matrix.
  *  \param weights The recurrent weight matrix.
+    \param reserve Memory allocated for storing data needed for back propagation
+                   (stored as [layer-size, mini-batch, timesteps, layer-count])
  *  \param activations The input/output activations from the previous layer
-           (stored as [previous-layer-outputs, mini-batch, timesteps]).
+                       (stored as [previous-layer-outputs, mini-batch, timesteps]).
  */
 void forwardPropRecurrent(matrix::Matrix& activations,
-    const matrix::Matrix& weights, const RecurrentOpsHandle& handle);
+                          matrix::Matrix& reserve,
+                          const matrix::Matrix& weights,
+                          const RecurrentOpsHandle& handle);
 
 /** \brief Back propagate through a recurrent weight matrix, generating deltas.
  *  \param weights The recurrent weight matrix.
  *  \param activations The input/output activations from the previous layer
-           (stored as [previous-layer-outputs, mini-batch, timesteps]).
+                       (stored as [previous-layer-outputs, mini-batch, timesteps]).
  */
 void backPropDeltasRecurrent(matrix::Matrix& deltas,
     const matrix::Matrix& weights,
     const matrix::Matrix& activations,
+    const matrix::Matrix& reserve,
     const RecurrentOpsHandle& handle);
 
 /** \brief Compute gradient for the recurrent weight matrix.
@@ -38,6 +43,7 @@ void backPropDeltasRecurrent(matrix::Matrix& deltas,
 void backPropGradientsRecurrent(matrix::Matrix& dWeights,
     const matrix::Matrix& activations,
     const matrix::Matrix& deltas,
+    const matrix::Matrix& reserve,
     const RecurrentOpsHandle& handle);
 
 }
