@@ -23,11 +23,14 @@ void forwardPropRecurrent(
     const matrix::DynamicView& activations,
     const matrix::ConstDynamicView& weights,
     const matrix::DynamicView& scratch,
-    const matrix::DynamicView& reserve, const RecurrentOpsHandle& handle);
+    const matrix::DynamicView& reserve,
+    const RecurrentOpsHandle& handle);
 
 void backPropDeltasRecurrent(const matrix::DynamicView& deltas,
-    const matrix::ConstDynamicView& weights, const matrix::ConstDynamicView& activations,
-    const matrix::DynamicView& scratch, const matrix::ConstDynamicView& reserve,
+    const matrix::ConstDynamicView& weights,
+    const matrix::ConstDynamicView& activations,
+    const matrix::DynamicView& scratch,
+    const matrix::ConstDynamicView& reserve,
     const RecurrentOpsHandle& handle);
 
 void backPropGradientsRecurrent(const matrix::DynamicView& dWeights,

@@ -156,6 +156,12 @@ public:
                                            int w         // width of input section
                                            );
 
+    static void cudnnSetTensorNdDescriptor(cudnnTensorDescriptor_t tensorDesc,
+                                           cudnnDataType_t         dataType,
+                                           int                    nbDims,
+                                           const int*             dimA,
+                                           const int*             strideA);
+
     static void cudnnDestroyTensorDescriptor(cudnnTensorDescriptor_t tensorDesc);
 
     static void cudnnTransformTensor(const void*                      alpha,
@@ -466,6 +472,12 @@ private:
                                             int h,        // height of input section
                                             int w         // width of input section
                                         );
+
+        cudnnStatus_t (*cudnnSetTensorNdDescriptor)(cudnnTensorDescriptor_t tensorDesc,
+                                                 cudnnDataType_t         dataType,
+                                                 int                    nbDims,
+                                                 const int*             dimA,
+                                                 const int*             strideA);
 
         cudnnStatus_t (*cudnnDestroyTensorDescriptor)( cudnnTensorDescriptor_t tensorDesc );
 

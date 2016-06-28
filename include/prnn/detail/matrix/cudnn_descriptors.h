@@ -74,8 +74,7 @@ private:
 class CudnnFilterViewDescriptor
 {
 public:
-    CudnnFilterViewDescriptor(const void* data, const Dimension& size,
-        const Precision& precision);
+    CudnnFilterViewDescriptor(void* data, const Dimension& size, const Precision& precision);
 
     ~CudnnFilterViewDescriptor();
 

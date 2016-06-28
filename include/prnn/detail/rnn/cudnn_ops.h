@@ -23,7 +23,7 @@ void cudnnBackPropDeltasRecurrent(const matrix::DynamicView& deltas,
     const matrix::ConstDynamicView& weights,
     const matrix::ConstDynamicView& activations,
     const matrix::DynamicView& scratch,
-    const matrix::DynamicView& reserve,
+    const matrix::ConstDynamicView& reserve,
     const RecurrentOpsHandle& handle);
 
 void cudnnBackPropGradientsRecurrent(const matrix::DynamicView& dWeights,

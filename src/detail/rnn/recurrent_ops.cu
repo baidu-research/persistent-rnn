@@ -724,9 +724,11 @@ void genericBackPropDeltasRecurrent(const matrix::DynamicView& deltas,
 }
 
 void backPropDeltasRecurrent(const matrix::DynamicView& deltas,
-    const matrix::ConstDynamicView& weights, const matrix::ConstDynamicView& activations,
+    const matrix::ConstDynamicView& weights,
+    const matrix::ConstDynamicView& activations,
     const matrix::DynamicView& scratch,
-    const matrix::DynamicView& reserve, const RecurrentOpsHandle& handle)
+    const matrix::ConstDynamicView& reserve,
+    const RecurrentOpsHandle& handle)
 {
     if(matrix::CudnnLibrary::isSupported() && handle.useCudnn)
     {

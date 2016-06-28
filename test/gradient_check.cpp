@@ -280,8 +280,8 @@ void TestSimpleRecurrentOpsGradientCheck(const Options& options)
 
     prnn::RecurrentOpsHandle handle(layer_size, mini_batch, timesteps, options.layers,
         prnn::RecurrentRectifiedLinear(), options.direction,
-        prnn::rnn::RECURRENT_SIMPLE_TYPE,
-        prnn::rnn::RECURRENT_SKIP_INPUT,
+        prnn::RECURRENT_SIMPLE_TYPE,
+        prnn::RECURRENT_SKIP_INPUT,
         options.usePersistentForwardProp,
         options.useCudnn,
         options.skipConnectionScale);
@@ -600,9 +600,16 @@ void TestCForwardOps(const Options& options)
 {
     auto precision = prnn::matrix::SinglePrecision();
 
-    prnn::RecurrentOpsHandle highLevelHandle(options.layerSize, options.miniBatchSize,
-        options.timesteps, options.layers, prnn::RecurrentRectifiedLinear(), options.direction,
-        options.usePersistentForwardProp, options.useCudnn, 0.0);
+    prnn::RecurrentOpsHandle highLevelHandle(options.layerSize,
+        options.miniBatchSize,
+        options.timesteps,
+        options.layers,
+        prnn::RecurrentRectifiedLinear(),
+        options.direction,
+        prnn::RECURRENT_SIMPLE_TYPE,
+        prnn::RECURRENT_SKIP_INPUT,
+        options.usePersistentForwardProp,
+        options.useCudnn, 0.0);
 
     auto weights = rand({options.layerSize, options.layerSize}, precision);
 
@@ -610,11 +617,11 @@ void TestCForwardOps(const Options& options)
 
     auto inputActivations = rand({options.layerSize, options.miniBatchSize, options.timesteps},
         precision);
-    auto reserve = prnn::matrix::Matrix();
+    auto highLevelReserve = prnn::matrix::Matrix();
 
     auto referenceActivations = copy(inputActivations);
 
-    forwardPropRecurrent(referenceActivations, reserve, weights, highLevelHandle);
+    forwardPropRecurrent(referenceActivations, highLevelReserve, weights, highLevelHandle);
 
     prnnHandle_t handle;
 
@@ -719,9 +726,16 @@ void TestCDeltaOps(const Options& options)
 {
     auto precision = prnn::matrix::SinglePrecision();
 
-    prnn::RecurrentOpsHandle highLevelHandle(options.layerSize, options.miniBatchSize,
-        options.timesteps, options.layers, prnn::RecurrentRectifiedLinear(), options.direction,
-        options.usePersistentForwardProp, options.useCudnn, 0.0);
+    prnn::RecurrentOpsHandle highLevelHandle(options.layerSize,
+        options.miniBatchSize,
+        options.timesteps,
+        options.layers,
+        prnn::RecurrentRectifiedLinear(),
+        options.direction,
+        prnn::RECURRENT_SIMPLE_TYPE,
+        prnn::RECURRENT_SKIP_INPUT,
+        options.usePersistentForwardProp,
+        options.useCudnn, 0.0);
 
     auto weights = rand({options.layerSize, options.layerSize}, precision);
 
@@ -731,11 +745,12 @@ void TestCDeltaOps(const Options& options)
         precision);
     auto deltas = rand({options.layerSize, options.miniBatchSize, options.timesteps},
         precision);
-    auto reserve = prnn::matrix::Matrix();
+    auto highLevelReserve = prnn::matrix::Matrix();
 
     auto referenceDeltas = copy(deltas);
 
-    backPropDeltasRecurrent(referenceDeltas, weights, inputActivations, reserve, highLevelHandle);
+    backPropDeltasRecurrent(referenceDeltas, weights, inputActivations, highLevelReserve,
+        highLevelHandle);
 
     prnnHandle_t handle;
 
@@ -857,9 +872,16 @@ void TestCGradientOps(const Options& options)
 {
     auto precision = prnn::matrix::SinglePrecision();
 
-    prnn::RecurrentOpsHandle highLevelHandle(options.layerSize, options.miniBatchSize,
-        options.timesteps, options.layers, prnn::RecurrentRectifiedLinear(), options.direction,
-        options.usePersistentForwardProp, options.useCudnn, 0.0);
+    prnn::RecurrentOpsHandle highLevelHandle(options.layerSize,
+        options.miniBatchSize,
+        options.timesteps,
+        options.layers,
+        prnn::RecurrentRectifiedLinear(),
+        options.direction,
+        prnn::RECURRENT_SIMPLE_TYPE,
+        prnn::RECURRENT_SKIP_INPUT,
+        options.usePersistentForwardProp,
+        options.useCudnn, 0.0);
 
     auto dWeights = ones({options.layerSize, options.layerSize}, precision);
 
@@ -867,11 +889,11 @@ void TestCGradientOps(const Options& options)
         precision);
     auto deltas = rand({options.layerSize, options.miniBatchSize, options.timesteps},
         precision);
-    auto reserve = prnn::matrix::Matrix();
+    auto highLevelReserve = prnn::matrix::Matrix();
 
     auto referenceDWeights = copy(dWeights);
 
-    backPropGradientsRecurrent(referenceDWeights, inputActivations, deltas, reserve,
+    backPropGradientsRecurrent(referenceDWeights, inputActivations, deltas, highLevelReserve,
         highLevelHandle);
 
     prnnHandle_t handle;
