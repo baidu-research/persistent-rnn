@@ -98,6 +98,12 @@ private:
 class ConstDynamicView
 {
 public:
+    ConstDynamicView()
+    : _data(nullptr)
+    {
+
+    }
+
     ConstDynamicView(const Matrix& matrix)
     : _data(matrix.data()), _size(matrix.size()), _stride(matrix.stride()),
       _precision(matrix.precision())
@@ -143,6 +149,11 @@ public:
     CUDA_DECORATOR bool isContiguous() const
     {
         return linearStride(size()) == stride();
+    }
+
+    CUDA_DECORATOR bool empty() const
+    {
+        return elements() == 0;
     }
 
 public:

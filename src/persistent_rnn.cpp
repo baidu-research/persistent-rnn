@@ -188,7 +188,7 @@ prnnStatus_t prnnSetTensorNdDescriptor(prnnTensorDescriptor_t descriptor,
 
     if (nbDims < 0 || nbDims > PRNN_DIM_MAX)
     {
-        return PRNN_STATUS_INVALID_VALUE;
+        return PRNN_STATUS_BAD_PARAM;
     }
 
     descriptor->size.clear();
@@ -215,7 +215,7 @@ prnnStatus_t prnnGetTensorNdDescriptor(const prnnTensorDescriptor_t descriptor,
 
     if (nbDimsRequested < 0 || nbDimsRequested > PRNN_DIM_MAX)
     {
-        return PRNN_STATUS_INVALID_VALUE;
+        return PRNN_STATUS_BAD_PARAM;
     }
 
     int dims = std::min(descriptor->size.size(), static_cast<size_t>(nbDimsRequested));
@@ -250,6 +250,8 @@ public:
     prnnDirectionMode_t direction;
     prnnRNNMode_t       mode;
     prnnDataType_t      dataType;
+    prnnBackend_t       backend;
+
 
 };
 
@@ -276,96 +278,74 @@ prnnStatus_t prnnDestroyRNNDescriptor(prnnRNNDescriptor_t descriptor)
 
 prnnStatus_t prnnSetRNNDescriptor(prnnRNNDescriptor_t rnnDescriptor,
                                   int hiddenSize,
-                                  int sequenceLength,
                                   int numberOfLayers,
                                   prnnDropoutDescriptor_t dropoutDescriptor,
                                   prnnRNNInputMode_t inputMode,
                                   prnnDirectionMode_t direction,
                                   prnnRNNMode_t mode,
-                                  prnnDataType_t dataType)
+                                  prnnDataType_t dataType,
+                                  prnnBackend_t backend)
 {
     rnnDescriptor->hiddenSize     = hiddenSize;
-    rnnDescriptor->sequenceLength = sequenceLength;
     rnnDescriptor->numberOfLayers = numberOfLayers;
 
     rnnDescriptor->inputMode = inputMode;
     rnnDescriptor->direction = direction;
     rnnDescriptor->mode      = mode;
     rnnDescriptor->dataType  = dataType;
+    rnnDescriptor->backend   = backend;
 
     return PRNN_STATUS_SUCCESS;
 }
 
-prnnStatus_t prnnGetRNNWorkspaceSize(prnnHandle_t cHandle,
-                                     const prnnRNNDescriptor_t rnnDesc,
-                                     const prnnTensorDescriptor_t* xDesc,
-                                     size_t* sizeInBytes)
+static prnn::matrix::DynamicView constructView(const prnnTensorDescriptor_t descriptor,
+    void* data, size_t timesteps)
 {
+    auto size   = selectDimensions(descriptor->size,   {1, 0, 2});
+    auto stride = selectDimensions(descriptor->stride, {1, 0, 2});
 
-    if(xDesc == nullptr)
-    {
-        return PRNN_STATUS_INVALID_VALUE;
-    }
+    stride[2] = size[0] * size[1];
+    size[2]   = timesteps;
 
-    if((*xDesc)->size.size() != 3)
-    {
-        return PRNN_STATUS_INVALID_VALUE;
-    }
-
-    prnn::RecurrentOpsHandle handle(rnnDesc->hiddenSize, rnnDesc->sequenceLength,
-        (*xDesc)->size[1]);
-
-    *sizeInBytes = prnn::rnn::getForwardPropScratchSize(handle, (*xDesc)->precision);
-
-    return PRNN_STATUS_SUCCESS;
+    return prnn::matrix::DynamicView(data, size, stride, descriptor->precision);
 }
 
-prnnStatus_t prnnGetRNNTrainingReserveSize(prnnHandle_t handle,
-                                           const prnnRNNDescriptor_t rnnDesc,
-                                           const prnnTensorDescriptor_t* xDesc,
-                                           size_t* sizeInBytes)
+static prnn::matrix::ConstDynamicView constructView(const prnnTensorDescriptor_t descriptor,
+    const void* data, size_t timesteps)
 {
-    *sizeInBytes = 0;
+    auto size   = selectDimensions(descriptor->size,   {1, 0, 2});
+    auto stride = selectDimensions(descriptor->stride, {1, 0, 2});
 
-    return PRNN_STATUS_SUCCESS;
+    stride[2] = size[0] * size[1];
+    size[2]   = timesteps;
+
+    return prnn::matrix::ConstDynamicView(data, size, stride, descriptor->precision);
 }
 
-
-prnnStatus_t prnnGetRNNParamsSize(prnnHandle_t handle,
-                                  const prnnRNNDescriptor_t rnnDesc,
-                                  const prnnTensorDescriptor_t* xDesc,
-                                  size_t* sizeInBytes)
+static prnn::matrix::ConstDynamicView constructView(const prnnTensorDescriptor_t descriptor,
+    size_t timesteps)
 {
-    *sizeInBytes = getPrecision(rnnDesc->dataType).size() *
-        rnnDesc->hiddenSize * rnnDesc->hiddenSize;
+    auto size   = selectDimensions(descriptor->size,   {1, 0, 2});
+    auto stride = selectDimensions(descriptor->stride, {1, 0, 2});
 
-    return PRNN_STATUS_SUCCESS;
+    stride[2] = size[0] * size[1];
+    size[2]   = timesteps;
+
+    return prnn::matrix::ConstDynamicView(nullptr, size, stride, descriptor->precision);
 }
 
-prnnStatus_t prnnGetRNNLinLayerMatrixParams(prnnHandle_t handle,
-                                            const prnnRNNDescriptor_t rnnDesc,
-                                            const int layer,
-                                            const prnnTensorDescriptor_t* xDesc,
-                                            const prnnFilterDescriptor_t wDesc,
-                                            const void* w,
-                                            const int linLayerID,
-                                            prnnFilterDescriptor_t linLayerMatDesc,
-                                            void** linLayerMat)
+static prnn::matrix::DynamicView constructWeightsView(const prnnTensorDescriptor_t descriptor,
+    void* data)
 {
-    return PRNN_STATUS_NOT_SUPPORTED;
+    return prnn::matrix::DynamicView(data, descriptor->size, descriptor->stride,
+        descriptor->precision);
 }
 
-prnnStatus_t prnnGetRNNLinLayerBiasParams(prnnHandle_t handle,
-                                          const prnnRNNDescriptor_t rnnDesc,
-                                          const int layer,
-                                          const prnnTensorDescriptor_t* xDesc,
-                                          const prnnFilterDescriptor_t wDesc,
-                                          const void* w,
-                                          const int linLayerID,
-                                          prnnFilterDescriptor_t linLayerBiasDesc,
-                                          void** linLayerBias)
+static prnn::matrix::ConstDynamicView constructWeightsView(
+    const prnnTensorDescriptor_t descriptor, const void* data)
 {
-    return PRNN_STATUS_NOT_SUPPORTED;
+    return prnn::matrix::ConstDynamicView(data, descriptor->size, descriptor->stride,
+        descriptor->precision);
 }
 
 static bool isSupported(prnnRNNDescriptor_t desc)
@@ -424,20 +404,6 @@ static bool isBackPropGradientsSupported(const void* x, const void* hx,
     return true;
 }
 
-static prnn::matrix::DynamicView constructView(const prnnTensorDescriptor_t descriptor,
-    void* data)
-{
-    return prnn::matrix::DynamicView(data, descriptor->size, descriptor->stride,
-        descriptor->precision);
-}
-
-static prnn::matrix::ConstDynamicView constructView(const prnnTensorDescriptor_t descriptor,
-    const void* data)
-{
-    return prnn::matrix::ConstDynamicView(data, descriptor->size, descriptor->stride,
-        descriptor->precision);
-}
-
 static prnn::RecurrentActivationFunction getActivationFunction(prnnRNNMode_t mode)
 {
     if(mode == PRNN_RNN_RELU)
@@ -494,6 +460,16 @@ static prnn::RecurrentLayerInputMode getLayerInputMode(prnnRNNInputMode_t mode)
     }
 }
 
+static bool getAllowsPersistentKernels(prnnBackend_t backend)
+{
+    return backend == PRNN_PERSISTENT_BACKEND;
+}
+
+static bool getUseCudnn(prnnBackend_t backend)
+{
+    return backend == PRNN_CUDNN_BACKEND;
+}
+
 static prnn::RecurrentOpsHandle constructHandle(prnnHandle_t handle,
     const prnnRNNDescriptor_t rnnDesc, size_t miniBatchSize, size_t timesteps)
 {
@@ -502,23 +478,119 @@ static prnn::RecurrentOpsHandle constructHandle(prnnHandle_t handle,
         getActivationFunction(rnnDesc->mode),
         getDirection(rnnDesc->direction),
         getLayerType(rnnDesc->mode),
-        getLayerInputMode(rnnDesc->inputMode));
+        getLayerInputMode(rnnDesc->inputMode),
+        getAllowsPersistentKernels(rnnDesc->backend),
+        getUseCudnn(rnnDesc->backend));
+}
+
+prnnStatus_t prnnGetRNNWorkspaceSize(prnnHandle_t cHandle,
+                                     const prnnRNNDescriptor_t rnnDesc,
+                                     const int timesteps,
+                                     const prnnTensorDescriptor_t* xDesc,
+                                     size_t* sizeInBytes)
+{
+
+    if(xDesc == nullptr)
+    {
+        return PRNN_STATUS_BAD_PARAM;
+    }
+
+    if((*xDesc)->size.size() != 3)
+    {
+        return PRNN_STATUS_BAD_PARAM;
+    }
+
+    prnn::RecurrentOpsHandle handle = constructHandle(cHandle, rnnDesc,
+        (*xDesc)->size[0], timesteps);
+
+    *sizeInBytes = prnn::rnn::getForwardPropScratchSize(handle, (*xDesc)->precision);
+
+    return PRNN_STATUS_SUCCESS;
+}
+
+prnnStatus_t prnnGetRNNTrainingReserveSize(prnnHandle_t handle,
+                                           const prnnRNNDescriptor_t rnnDesc,
+                                           const int timesteps,
+                                           const prnnTensorDescriptor_t* xDesc,
+                                           size_t* sizeInBytes)
+{
+    if((*xDesc)->size.size() != 3)
+    {
+        return PRNN_STATUS_BAD_PARAM;
+    }
+
+    auto activationsView = constructView(*xDesc, timesteps);
+
+    size_t miniBatchSize = activationsView.size()[1];
+
+    *sizeInBytes = getPrecision(rnnDesc->dataType).size() * prnn::rnn::getReserveDimensions(
+        constructHandle(handle, rnnDesc, miniBatchSize, timesteps), (*xDesc)->precision).product();
+
+    return PRNN_STATUS_SUCCESS;
+}
+
+
+prnnStatus_t prnnGetRNNParamsSize(prnnHandle_t handle,
+                                  const prnnRNNDescriptor_t rnnDesc,
+                                  const prnnTensorDescriptor_t* xDesc,
+                                  size_t* sizeInBytes)
+{
+    if((*xDesc)->size.size() != 3)
+    {
+        return PRNN_STATUS_BAD_PARAM;
+    }
+
+    auto activationsView = constructView(*xDesc, 1);
+
+    size_t miniBatchSize = activationsView.size()[1];
+
+    *sizeInBytes = getPrecision(rnnDesc->dataType).size() * prnn::rnn::getWeightDimensions(
+        constructHandle(handle, rnnDesc, miniBatchSize, 1), (*xDesc)->precision).product();
+
+    return PRNN_STATUS_SUCCESS;
+}
+
+prnnStatus_t prnnGetRNNLinLayerMatrixParams(prnnHandle_t handle,
+                                            const prnnRNNDescriptor_t rnnDesc,
+                                            const int layer,
+                                            const prnnTensorDescriptor_t* xDesc,
+                                            const prnnFilterDescriptor_t wDesc,
+                                            const void* w,
+                                            const int linLayerID,
+                                            prnnFilterDescriptor_t linLayerMatDesc,
+                                            void** linLayerMat)
+{
+    return PRNN_STATUS_NOT_SUPPORTED;
+}
+
+prnnStatus_t prnnGetRNNLinLayerBiasParams(prnnHandle_t handle,
+                                          const prnnRNNDescriptor_t rnnDesc,
+                                          const int layer,
+                                          const prnnTensorDescriptor_t* xDesc,
+                                          const prnnFilterDescriptor_t wDesc,
+                                          const void* w,
+                                          const int linLayerID,
+                                          prnnFilterDescriptor_t linLayerBiasDesc,
+                                          void** linLayerBias)
+{
+    return PRNN_STATUS_NOT_SUPPORTED;
 }
 
 static prnn::matrix::DynamicView getView(void* workspace, size_t size,
     const prnn::matrix::Precision& precision)
 {
-    return prnn::matrix::DynamicView(workspace, {size}, {1}, precision);
+    return prnn::matrix::DynamicView(workspace, {size / precision.size()}, {1}, precision);
 }
 
 static prnn::matrix::ConstDynamicView getView(const void* workspace, size_t size,
     const prnn::matrix::Precision& precision)
 {
-    return prnn::matrix::ConstDynamicView(workspace, {size}, {1}, precision);
+    return prnn::matrix::ConstDynamicView(workspace, {size / precision.size()}, {1}, precision);
 }
 
 prnnStatus_t prnnRNNForward(prnnHandle_t handle,
                             const prnnRNNDescriptor_t rnnDesc,
+                            const int seqLength,
                             const prnnTensorDescriptor_t* xDesc,
                             const void* x,
                             const prnnTensorDescriptor_t hxDesc,
@@ -549,11 +621,13 @@ prnnStatus_t prnnRNNForward(prnnHandle_t handle,
         return PRNN_STATUS_NOT_SUPPORTED;
     }
 
-    auto activationsView = constructView(*yDesc, y);
-    auto weightsView     = constructView( wDesc, w);
+    size_t timesteps     = seqLength;
+
+    auto activationsView = constructView(*yDesc, y, timesteps);
+    auto inputView       = constructView(*xDesc, x, timesteps);
+    auto weightsView     = constructWeightsView( wDesc, w);
 
     size_t miniBatchSize = activationsView.size()[1];
-    size_t timesteps     = activationsView.size()[2];
 
     auto opsHandle = constructHandle(handle, rnnDesc, miniBatchSize, timesteps);
 
@@ -563,7 +637,7 @@ prnnStatus_t prnnRNNForward(prnnHandle_t handle,
     auto reserveView = getView(reserveSpace, reserveSpaceSizeInBytes,
         activationsView.precision());
 
-    prnn::rnn::forwardPropRecurrent(activationsView, weightsView,
+    prnn::rnn::forwardPropRecurrent(activationsView, inputView, weightsView,
         scratchView, reserveView, opsHandle);
 
     return PRNN_STATUS_SUCCESS;
@@ -571,6 +645,7 @@ prnnStatus_t prnnRNNForward(prnnHandle_t handle,
 
 prnnStatus_t prnnRNNBackwardData(prnnHandle_t handle,
                                  const prnnRNNDescriptor_t rnnDesc,
+                                 const int seqLength,
                                  const prnnTensorDescriptor_t* yDesc,
                                  const void* y,
                                  const prnnTensorDescriptor_t* dyDesc,
@@ -593,7 +668,7 @@ prnnStatus_t prnnRNNBackwardData(prnnHandle_t handle,
                                  void* dcx,
                                  void* workspace,
                                  size_t workSpaceSizeInBytes,
-                                 const void* reserveSpace,
+                                 void* reserveSpace,
                                  size_t reserveSpaceSizeInBytes)
 {
     if (!isSupported(rnnDesc))
@@ -606,12 +681,14 @@ prnnStatus_t prnnRNNBackwardData(prnnHandle_t handle,
         return PRNN_STATUS_NOT_SUPPORTED;
     }
 
-    auto activationsView = constructView(*yDesc,  y);
-    auto deltasView      = constructView(*dxDesc, dx);
-    auto weightsView     = constructView( wDesc,  w);
+    size_t timesteps     = seqLength;
+
+    auto activationsView  = constructView(*yDesc,  y,  timesteps);
+    auto deltasView       = constructView(*dxDesc, dx, timesteps);
+    auto outputDeltasView = constructView(*dyDesc, dy, timesteps);
+    auto weightsView      = constructWeightsView(wDesc,  w);
 
     size_t miniBatchSize = activationsView.size()[1];
-    size_t timesteps     = activationsView.size()[2];
 
     auto opsHandle = constructHandle(handle, rnnDesc, miniBatchSize, timesteps);
 
@@ -622,13 +699,14 @@ prnnStatus_t prnnRNNBackwardData(prnnHandle_t handle,
         activationsView.precision());
 
     prnn::rnn::backPropDeltasRecurrent(deltasView, weightsView, activationsView,
-        scratchView, reserveView, opsHandle);
+        outputDeltasView, scratchView, reserveView, opsHandle);
 
     return PRNN_STATUS_SUCCESS;
 }
 
 prnnStatus_t prnnRNNBackwardWeights(prnnHandle_t handle,
                                     const prnnRNNDescriptor_t rnnDesc,
+                                    const int seqLength,
                                     const prnnTensorDescriptor_t* xDesc,
                                     const void* x,
                                     const prnnTensorDescriptor_t hxDesc,
@@ -652,22 +730,23 @@ prnnStatus_t prnnRNNBackwardWeights(prnnHandle_t handle,
         return PRNN_STATUS_NOT_SUPPORTED;
     }
 
-    auto activationsView = constructView(*xDesc,  x);
-    auto deltasView      = constructView(*yDesc,  y);
-    auto weightsView     = constructView(dwDesc, dw);
+    size_t timesteps     = seqLength;
 
-    size_t miniBatchSize = activationsView.size()[1];
-    size_t timesteps     = activationsView.size()[2];
+    auto inputActivationsView  = constructView(*xDesc,  x, timesteps);
+    auto outputActivationsView = constructView(*yDesc,  y, timesteps);
+    auto weightsView           = constructWeightsView(dwDesc, dw);
+
+    size_t miniBatchSize = inputActivationsView.size()[1];
 
     auto opsHandle = constructHandle(handle, rnnDesc, miniBatchSize, timesteps);
 
     auto scratchView = getView(workspace, workSpaceSizeInBytes,
-        activationsView.precision());
+        inputActivationsView.precision());
 
     auto reserveView = getView(reserveSpace, reserveSpaceSizeInBytes,
-        activationsView.precision());
+        inputActivationsView.precision());
 
-    prnn::rnn::backPropGradientsRecurrent(weightsView, activationsView, deltasView,
+    prnn::rnn::backPropGradientsRecurrent(weightsView, inputActivationsView, outputActivationsView,
         scratchView, reserveView, opsHandle);
 
     return PRNN_STATUS_SUCCESS;

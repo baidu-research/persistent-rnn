@@ -9,6 +9,7 @@
 #include <prnn/detail/matrix/matrix_view.h>
 
 #include <prnn/detail/util/memory.h>
+#include <prnn/detail/util/logger.h>
 
 namespace prnn
 {
@@ -23,7 +24,9 @@ using CudnnFilterConstViewDescriptor = prnn::matrix::CudnnFilterConstViewDescrip
 using CudnnFilterViewDescriptor = prnn::matrix::CudnnFilterViewDescriptor;
 using CudnnTensorDescriptor = prnn::matrix::CudnnTensorDescriptor;
 using CudnnTensorViewDescriptor = prnn::matrix::CudnnTensorViewDescriptor;
+using CudnnTensorViewDescriptorArray = prnn::matrix::CudnnTensorViewDescriptorArray;
 using CudnnTensorConstViewDescriptor = prnn::matrix::CudnnTensorConstViewDescriptor;
+using CudnnTensorConstViewDescriptorArray = prnn::matrix::CudnnTensorConstViewDescriptorArray;
 
 CudnnLibrary::cudnnDirectionMode_t convertDirection(const prnn::RecurrentLayerDirection direction)
 {
@@ -105,12 +108,13 @@ CudnnLibrary::cudnnDataType_t convertPrecision(const matrix::Precision& precisio
 std::unique_ptr<CudnnRNNDescriptor> createRnnDescriptor(const RecurrentOpsHandle& handle,
     const matrix::Precision& precision)
 {
-    return std::make_unique<CudnnRNNDescriptor>(handle.layerSize, handle.timesteps, handle.layers,
-        convertDirection(handle.direction), convertLayerType(handle.layerType),
-        convertInputMode(handle.inputMode), convertPrecision(precision));
+    return std::make_unique<CudnnRNNDescriptor>(handle.layerSize, handle.layers,
+        convertInputMode(handle.inputMode), convertDirection(handle.direction),
+        convertLayerType(handle.layerType), convertPrecision(precision));
 }
 
-std::unique_ptr<CudnnFilterConstViewDescriptor> getFilterDescriptor(const matrix::ConstDynamicView& view)
+std::unique_ptr<CudnnFilterConstViewDescriptor> getFilterDescriptor(
+    const matrix::ConstDynamicView& view)
 {
     return std::make_unique<CudnnFilterConstViewDescriptor>(view.data<void>(), view.size(),
         view.precision());
@@ -122,111 +126,43 @@ std::unique_ptr<CudnnFilterViewDescriptor> getFilterDescriptor(const matrix::Dyn
         view.precision());
 }
 
-std::unique_ptr<CudnnTensorViewDescriptor> unpack(const matrix::DynamicView& activations, size_t index)
-{
-    if(activations.size().size() > 3 && index < activations.size()[3])
-    {
-        matrix::Dimension begin({0,0,0,index});
-        matrix::Dimension end = activations.size();
-
-        end[3] = index + 1;
-
-        auto pack = slice(activations, begin, end);
-
-        return std::make_unique<CudnnTensorViewDescriptor>(pack.data<void>(),
-            pack.size(), pack.precision());
-    }
-
-    return std::make_unique<CudnnTensorViewDescriptor>();
-}
-
-std::unique_ptr<CudnnTensorConstViewDescriptor> unpack(const matrix::ConstDynamicView& activations,
-    size_t index)
-{
-    if(activations.size().size() > 3 && index < activations.size()[3])
-    {
-        matrix::Dimension begin({0,0,0,index});
-        matrix::Dimension end = activations.size();
-
-        end[3] = index + 1;
-
-        auto pack = slice(activations, begin, end);
-
-        return std::make_unique<CudnnTensorConstViewDescriptor>(pack.data<void>(), pack.size(),
-            pack.precision());
-    }
-
-    return std::make_unique<CudnnTensorConstViewDescriptor>();
-}
-
-std::unique_ptr<CudnnTensorViewDescriptor> unpackX(const matrix::DynamicView& activations)
-{
-    return unpack(activations, 0);
-}
-
-std::unique_ptr<CudnnTensorConstViewDescriptor> unpackX(
+std::unique_ptr<CudnnTensorConstViewDescriptorArray> getActivationsDescriptors(
     const matrix::ConstDynamicView& activations)
 {
-    return unpack(activations, 0);
+    matrix::Dimension dimensions = {activations.size()[1],   activations.size()[0],   1};
+    matrix::Dimension strides    = {activations.stride()[1], activations.stride()[0], 1};
+
+    size_t timesteps = activations.size()[2];
+
+    return std::make_unique<CudnnTensorConstViewDescriptorArray>(activations.data<void>(),
+        dimensions, strides, timesteps, activations.precision());
 }
 
-std::unique_ptr<CudnnTensorViewDescriptor> unpackHX(const matrix::DynamicView& activations)
+std::unique_ptr<CudnnTensorViewDescriptorArray> getActivationsDescriptors(
+    const matrix::DynamicView& activations)
 {
-    return unpack(activations, 1);
+    matrix::Dimension dimensions = {activations.size()[1],   activations.size()[0],   1};
+    matrix::Dimension strides    = {activations.stride()[1], activations.stride()[0], 1};
+
+    size_t timesteps = activations.size()[2];
+
+    return std::make_unique<CudnnTensorViewDescriptorArray>(activations.data<void>(), dimensions,
+        strides, timesteps, activations.precision());
 }
 
-std::unique_ptr<CudnnTensorConstViewDescriptor> unpackHX(
-    const matrix::ConstDynamicView& activations)
+std::unique_ptr<CudnnTensorViewDescriptor> getEmptyLayerInputDescriptor(
+    const RecurrentOpsHandle& handle, const matrix::Precision& precision)
 {
-    return unpack(activations, 1);
-}
+    matrix::Dimension dimensions = {handle.layers, handle.miniBatchSize, handle.layerSize};
+    matrix::Dimension strides    = {handle.layerSize * handle.miniBatchSize, handle.layerSize, 1};
 
-std::unique_ptr<CudnnTensorViewDescriptor> unpackCX(const matrix::DynamicView& activations)
-{
-    return unpack(activations, 2);
-}
-
-std::unique_ptr<CudnnTensorConstViewDescriptor> unpackCX(
-    const matrix::ConstDynamicView& activations)
-{
-    return unpack(activations, 2);
-}
-
-std::unique_ptr<CudnnTensorViewDescriptor> unpackY(const matrix::DynamicView& activations)
-{
-    return unpack(activations, 3);
-}
-
-std::unique_ptr<CudnnTensorConstViewDescriptor> unpackY(
-    const matrix::ConstDynamicView& activations)
-{
-    return unpack(activations, 3);
-}
-
-std::unique_ptr<CudnnTensorViewDescriptor> unpackHY(const matrix::DynamicView& activations)
-{
-    return unpack(activations, 4);
-}
-
-std::unique_ptr<CudnnTensorConstViewDescriptor> unpackHY(
-    const matrix::ConstDynamicView& activations)
-{
-    return unpack(activations, 4);
-}
-
-std::unique_ptr<CudnnTensorViewDescriptor> unpackCY(const matrix::DynamicView& activations)
-{
-    return unpack(activations, 4);
-}
-
-std::unique_ptr<CudnnTensorConstViewDescriptor> unpackCY(
-    const matrix::ConstDynamicView& activations)
-{
-    return unpack(activations, 4);
+    return std::make_unique<CudnnTensorViewDescriptor>(nullptr, dimensions,
+        strides, precision);
 }
 
 void cudnnForwardPropRecurrent(
     const matrix::DynamicView& activations,
+    const matrix::ConstDynamicView& inputActivations,
     const matrix::ConstDynamicView& weights,
     const matrix::DynamicView& scratch,
     const matrix::DynamicView& reserve,
@@ -234,66 +170,96 @@ void cudnnForwardPropRecurrent(
 {
     auto rnnDescriptor = createRnnDescriptor(handle, weights.precision());
 
-    auto xDescriptor  = unpackX(activations);
-    auto hxDescriptor = unpackHX(activations);
-    auto cxDescriptor = unpackCX(activations);
+    auto xDescriptor  = getActivationsDescriptors(inputActivations);
+    auto hxDescriptor = getEmptyLayerInputDescriptor(handle, weights.precision());
+    auto cxDescriptor = getEmptyLayerInputDescriptor(handle, weights.precision());
 
-    auto yDescriptor  = unpackY(activations);
-    auto hyDescriptor = unpackHY(activations);
-    auto cyDescriptor = unpackCY(activations);
+    auto yDescriptor  = getActivationsDescriptors(activations);
+    auto hyDescriptor = getEmptyLayerInputDescriptor(handle, weights.precision());
+    auto cyDescriptor = getEmptyLayerInputDescriptor(handle, weights.precision());
 
     auto weightsDescriptor = getFilterDescriptor(weights);
 
-    CudnnLibrary::cudnnRNNForward(rnnDescriptor->descriptor(),
-                                  &xDescriptor->descriptor(),
-                                  xDescriptor->data(),
-                                  hxDescriptor->descriptor(),
-                                  hxDescriptor->data(),
-                                  cxDescriptor->descriptor(),
-                                  cxDescriptor->data(),
-                                  weightsDescriptor->descriptor(),
-                                  weightsDescriptor->data(),
-                                  &yDescriptor->descriptor(),
-                                  yDescriptor->data(),
-                                  hyDescriptor->descriptor(),
-                                  hyDescriptor->data(),
-                                  cyDescriptor->descriptor(),
-                                  cyDescriptor->data(),
-                                  scratch.data<void>(),
-                                  scratch.elements() * scratch.precision().size(),
-                                  reserve.data<void>(),
-                                  reserve.elements() * reserve.precision().size());
+    prnn::util::log("CudnnOps") << "Running cudnnRNNForwardTraining\n";
+    prnn::util::log("CudnnOps") << "Inputs         " << xDescriptor->toString() << "\n";
+    prnn::util::log("CudnnOps") << "Outputs        " << yDescriptor->toString() << "\n";
+    prnn::util::log("CudnnOps") << "hx             " << hxDescriptor->toString() << "\n";
+    prnn::util::log("CudnnOps") << "cx             " << cxDescriptor->toString() << "\n";
+    prnn::util::log("CudnnOps") << "hy             " << hyDescriptor->toString() << "\n";
+    prnn::util::log("CudnnOps") << "cy             " << cyDescriptor->toString() << "\n";
+    prnn::util::log("CudnnOps") << "Input Weights  " << weightsDescriptor->toString() << "\n";
+    prnn::util::log("CudnnOps") << "Handle         " << handle.toString() << "\n";
+    prnn::util::log("CudnnOps") << "Scratch size   " << scratch.elements() * scratch.precision().size() << "\n";
+    prnn::util::log("CudnnOps") << "Reserve size   " << reserve.elements() * reserve.precision().size() << "\n";
+
+    CudnnLibrary::cudnnRNNForwardTraining(rnnDescriptor->descriptor(),
+                                          handle.timesteps,
+                                          xDescriptor->descriptors(),
+                                          xDescriptor->data(),
+                                          hxDescriptor->descriptor(),
+                                          hxDescriptor->data(),
+                                          cxDescriptor->descriptor(),
+                                          cxDescriptor->data(),
+                                          weightsDescriptor->descriptor(),
+                                          weightsDescriptor->data(),
+                                          yDescriptor->descriptors(),
+                                          yDescriptor->data(),
+                                          hyDescriptor->descriptor(),
+                                          hyDescriptor->data(),
+                                          cyDescriptor->descriptor(),
+                                          cyDescriptor->data(),
+                                          scratch.data<void>(),
+                                          scratch.elements() * scratch.precision().size(),
+                                          reserve.data<void>(),
+                                          reserve.elements() * reserve.precision().size());
 }
 
 void cudnnBackPropDeltasRecurrent(const matrix::DynamicView& deltas,
     const matrix::ConstDynamicView& weights,
-    const matrix::ConstDynamicView& activations,
+    const matrix::ConstDynamicView& outputActivations,
+    const matrix::ConstDynamicView& outputDeltas,
     const matrix::DynamicView& scratch,
     const matrix::ConstDynamicView& reserve,
     const RecurrentOpsHandle& handle)
 {
     auto rnnDescriptor = createRnnDescriptor(handle, weights.precision());
 
-    auto yDescriptor  = unpackY(activations);
-    auto dyDescriptor = unpackY(deltas);
+    auto yDescriptor  = getActivationsDescriptors(outputActivations);
+    auto dyDescriptor = getActivationsDescriptors(outputDeltas);
 
-    auto dhyDescriptor = unpackHY(deltas);
-    auto dcyDescriptor = unpackCY(deltas);
+    auto dhyDescriptor = getEmptyLayerInputDescriptor(handle, weights.precision());
+    auto dcyDescriptor = getEmptyLayerInputDescriptor(handle, weights.precision());
 
     auto weightsDescriptor = getFilterDescriptor(weights);
 
-    auto hxDescriptor  = unpackHX(activations);
-    auto dhxDescriptor = unpackHX(deltas);
+    auto hxDescriptor  = getEmptyLayerInputDescriptor(handle, weights.precision());
+    auto dhxDescriptor = getEmptyLayerInputDescriptor(handle, weights.precision());
 
-    auto cxDescriptor  = unpackCX(activations);
-    auto dcxDescriptor = unpackCX(deltas);
+    auto cxDescriptor  = getEmptyLayerInputDescriptor(handle, weights.precision());
+    auto dcxDescriptor = getEmptyLayerInputDescriptor(handle, weights.precision());
 
-    auto dxDescriptor = unpackX(deltas);
+    auto dxDescriptor = getActivationsDescriptors(deltas);
+
+    prnn::util::log("CudnnOps") << "Running cudnnRNNBackwardData\n";
+    prnn::util::log("CudnnOps") << "y              " << yDescriptor->toString() << "\n";
+    prnn::util::log("CudnnOps") << "dy             " << dyDescriptor->toString() << "\n";
+    prnn::util::log("CudnnOps") << "dhy            " << dhyDescriptor->toString() << "\n";
+    prnn::util::log("CudnnOps") << "dcy            " << dcyDescriptor->toString() << "\n";
+    prnn::util::log("CudnnOps") << "Input Weights  " << weightsDescriptor->toString() << "\n";
+    prnn::util::log("CudnnOps") << "hx             " << hxDescriptor->toString() << "\n";
+    prnn::util::log("CudnnOps") << "dhx            " << dhxDescriptor->toString() << "\n";
+    prnn::util::log("CudnnOps") << "cx             " << cxDescriptor->toString() << "\n";
+    prnn::util::log("CudnnOps") << "dcx            " << dcxDescriptor->toString() << "\n";
+    prnn::util::log("CudnnOps") << "dx             " << dxDescriptor->toString() << "\n";
+    prnn::util::log("CudnnOps") << "Handle         " << handle.toString() << "\n";
+    prnn::util::log("CudnnOps") << "Scratch size   " << scratch.elements() * scratch.precision().size() << "\n";
+    prnn::util::log("CudnnOps") << "Reserve size   " << reserve.elements() * reserve.precision().size() << "\n";
 
     CudnnLibrary::cudnnRNNBackwardData(rnnDescriptor->descriptor(),
-                                       &yDescriptor->descriptor(),
+                                       handle.timesteps,
+                                       yDescriptor->descriptors(),
                                        yDescriptor->data(),
-                                       &dyDescriptor->descriptor(),
+                                       dyDescriptor->descriptors(),
                                        dyDescriptor->data(),
                                        dhyDescriptor->descriptor(),
                                        dhyDescriptor->data(),
@@ -305,7 +271,7 @@ void cudnnBackPropDeltasRecurrent(const matrix::DynamicView& deltas,
                                        hxDescriptor->data(),
                                        cxDescriptor->descriptor(),
                                        cxDescriptor->data(),
-                                       &dxDescriptor->descriptor(),
+                                       dxDescriptor->descriptors(),
                                        dxDescriptor->data(),
                                        dhxDescriptor->descriptor(),
                                        dhxDescriptor->data(),
@@ -319,26 +285,27 @@ void cudnnBackPropDeltasRecurrent(const matrix::DynamicView& deltas,
 }
 
 void cudnnBackPropGradientsRecurrent(const matrix::DynamicView& dWeights,
+    const matrix::ConstDynamicView& inputActivations,
     const matrix::ConstDynamicView& outputActivations,
-    const matrix::ConstDynamicView& deltas,
     const matrix::ConstDynamicView& scratch,
     const matrix::ConstDynamicView& reserve,
     const RecurrentOpsHandle& handle)
 {
     auto rnnDescriptor = createRnnDescriptor(handle, dWeights.precision());
 
-    auto xDescriptor  = unpackX(outputActivations);
-    auto hxDescriptor = unpackHX(outputActivations);
-    auto yDescriptor  = unpackY(outputActivations);
+    auto xDescriptor  = getActivationsDescriptors(inputActivations);
+    auto hxDescriptor = getEmptyLayerInputDescriptor(handle, dWeights.precision());
+    auto yDescriptor  = getActivationsDescriptors(outputActivations);
 
     auto weightsDescriptor = getFilterDescriptor(dWeights);
 
     CudnnLibrary::cudnnRNNBackwardWeights(rnnDescriptor->descriptor(),
-                                          &xDescriptor->descriptor(),
+                                          handle.timesteps,
+                                          xDescriptor->descriptors(),
                                           xDescriptor->data(),
                                           hxDescriptor->descriptor(),
                                           hxDescriptor->data(),
-                                          &yDescriptor->descriptor(),
+                                          yDescriptor->descriptors(),
                                           yDescriptor->data(),
                                           scratch.data<void>(),
                                           scratch.elements() * scratch.precision().size(),
@@ -347,6 +314,157 @@ void cudnnBackPropGradientsRecurrent(const matrix::DynamicView& dWeights,
                                           reserve.data<void>(),
                                           reserve.elements() * reserve.precision().size());
 
+}
+
+size_t cudnnGetReserveSize(
+    const RecurrentOpsHandle& handle,
+    const matrix::Precision& precision)
+{
+    auto rnnDescriptor = createRnnDescriptor(handle, precision);
+
+    CudnnTensorViewDescriptorArray xDescriptor(nullptr, {handle.miniBatchSize,
+        handle.layerSize, 1}, {handle.layerSize, 1, 1}, handle.timesteps, precision);
+
+    size_t size = 0;
+
+    CudnnLibrary::cudnnGetRNNTrainingReserveSize(rnnDescriptor->descriptor(),
+        handle.timesteps,
+        xDescriptor.descriptors(), &size);
+
+    return size;
+
+}
+
+size_t cudnnGetScratchSize(
+    const RecurrentOpsHandle& handle,
+    const matrix::Precision& precision)
+{
+    auto rnnDescriptor = createRnnDescriptor(handle, precision);
+
+    CudnnTensorViewDescriptorArray xDescriptor(nullptr, {handle.miniBatchSize,
+        handle.layerSize, 1}, {handle.layerSize, 1, 1}, handle.timesteps, precision);
+
+    size_t size = 0;
+
+    CudnnLibrary::cudnnGetRNNWorkspaceSize(rnnDescriptor->descriptor(),
+        handle.timesteps,
+        xDescriptor.descriptors(), &size);
+
+    return size;
+}
+
+size_t cudnnGetWeightsSize(
+    const RecurrentOpsHandle& handle,
+    const matrix::Precision& precision)
+{
+    auto rnnDescriptor = createRnnDescriptor(handle, precision);
+
+    CudnnTensorViewDescriptorArray xDescriptor(nullptr, {handle.miniBatchSize,
+        handle.layerSize, 1}, {handle.layerSize, 1, 1}, handle.timesteps, precision);
+
+    size_t size = 0;
+
+    CudnnLibrary::cudnnGetRNNParamsSize(rnnDescriptor->descriptor(),
+        xDescriptor.descriptors()[0], &size, convertPrecision(precision));
+
+    return size;
+}
+
+static size_t getArraysPerLayer(const RecurrentOpsHandle& handle)
+{
+    if(handle.layerType == RECURRENT_SIMPLE_TYPE)
+    {
+        return 4;
+    }
+    else if(handle.layerType == RECURRENT_GRU_TYPE)
+    {
+        return 12;
+    }
+    else
+    {
+        return 16;
+    }
+}
+
+static size_t getLayer(const RecurrentOpsHandle& handle, size_t index)
+{
+    return index / getArraysPerLayer(handle);
+}
+
+static size_t isLinearLayer(const RecurrentOpsHandle& handle, size_t index)
+{
+    return index % 2 == 0;
+}
+
+static size_t getIdInLayer(const RecurrentOpsHandle& handle, size_t index)
+{
+    return (index % getArraysPerLayer(handle)) / 2;
+}
+
+void getOffsetAndDimensions(size_t& offset, matrix::Dimension& dimensions,
+    const RecurrentOpsHandle& handle, const matrix::Precision& precision, size_t index)
+{
+    auto rnnDescriptor = createRnnDescriptor(handle, precision);
+
+    CudnnTensorViewDescriptorArray xDescriptor(nullptr, {handle.miniBatchSize,
+        handle.layerSize, 1}, {handle.layerSize, 1, 1}, handle.timesteps, precision);
+
+    CudnnFilterViewDescriptor wDescriptor(nullptr,
+        {cudnnGetWeightsSize(handle, precision) / precision.size(), 1, 1},
+        precision);
+
+    CudnnFilterViewDescriptor filter(nullptr, {1, 1, 1}, precision);
+
+    void* address = nullptr;
+
+    if(isLinearLayer(handle, index))
+    {
+        CudnnLibrary::cudnnGetRNNLinLayerMatrixParams(rnnDescriptor->descriptor(),
+                                                      getLayer(handle, index),
+                                                      xDescriptor.descriptors(),
+                                                      wDescriptor.descriptor(),
+                                                      nullptr,
+                                                      getIdInLayer(handle, index),
+                                                      filter.descriptor(),
+                                                      &address);
+    }
+    else
+    {
+        CudnnLibrary::cudnnGetRNNLinLayerBiasParams(rnnDescriptor->descriptor(),
+                                                    getLayer(handle, index),
+                                                    xDescriptor.descriptors(),
+                                                    wDescriptor.descriptor(),
+                                                    nullptr,
+                                                    getIdInLayer(handle, index),
+                                                    filter.descriptor(),
+                                                    &address);
+    }
+
+    offset = reinterpret_cast<size_t>(address) / precision.size();
+
+    dimensions = filter.getDimensions();
+}
+
+size_t cudnnGetWeightsBegin(const RecurrentOpsHandle& handle, const matrix::Precision& precision,
+    size_t index)
+{
+    size_t offset = 0;
+    matrix::Dimension dimensions;
+
+    getOffsetAndDimensions(offset, dimensions, handle, precision, index);
+
+    return offset;
+}
+
+size_t cudnnGetWeightsEnd(const RecurrentOpsHandle& handle, const matrix::Precision& precision,
+    size_t index)
+{
+    size_t offset = 0;
+    matrix::Dimension dimensions;
+
+    getOffsetAndDimensions(offset, dimensions, handle, precision, index);
+
+    return offset + dimensions.product();
 }
 
 }

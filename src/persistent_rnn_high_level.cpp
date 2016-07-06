@@ -8,12 +8,41 @@
 
 #include <prnn/detail/matrix/matrix_view.h>
 #include <prnn/detail/matrix/matrix_operations.h>
+#include <prnn/detail/matrix/matrix_transforms.h>
+#include <prnn/detail/matrix/copy_operations.h>
 
 #include <prnn/detail/rnn/recurrent_ops_handle.h>
 #include <prnn/detail/rnn/recurrent_ops.h>
 
 namespace prnn
 {
+
+matrix::Matrix createReserveRecurrent(const RecurrentOpsHandle& handle,
+    const matrix::Precision& precision)
+{
+    auto size = prnn::rnn::getReserveDimensions(handle, precision);
+
+    return matrix::Matrix(size, precision);
+}
+
+matrix::Matrix createWeightsRecurrent(const RecurrentOpsHandle& handle,
+    const matrix::Precision& precision)
+{
+    auto size = prnn::rnn::getWeightDimensions(handle, precision);
+
+    return matrix::Matrix(size, precision);
+}
+
+matrix::Matrix sliceLayerWeights(const matrix::Matrix& weights, const RecurrentOpsHandle& handle,
+    size_t index)
+{
+    matrix::Dimension begin;
+    matrix::Dimension end;
+
+    prnn::rnn::getWeightsRange(begin, end, handle, weights.precision(), index);
+
+    return slice(weights, begin, end);
+}
 
 void forwardPropRecurrent(matrix::Matrix& activations,
     matrix::Matrix& reserve,
@@ -25,6 +54,7 @@ void forwardPropRecurrent(matrix::Matrix& activations,
     zeros(scratch);
 
     prnn::rnn::forwardPropRecurrent(matrix::DynamicView(activations),
+        matrix::ConstDynamicView(copy(activations)),
         matrix::ConstDynamicView(weights),
         matrix::DynamicView(scratch),
         matrix::DynamicView(reserve),
@@ -34,7 +64,7 @@ void forwardPropRecurrent(matrix::Matrix& activations,
 void backPropDeltasRecurrent(matrix::Matrix& deltas,
     const matrix::Matrix& weights,
     const matrix::Matrix& activationsData,
-    const matrix::Matrix& reserve,
+    matrix::Matrix& reserve,
     const RecurrentOpsHandle& handle)
 {
     auto activations = activationsData;
@@ -45,9 +75,10 @@ void backPropDeltasRecurrent(matrix::Matrix& deltas,
 
     prnn::rnn::backPropDeltasRecurrent(matrix::DynamicView(deltas),
         matrix::ConstDynamicView(weights),
-        matrix::DynamicView(activations),
+        matrix::ConstDynamicView(activations),
+        matrix::ConstDynamicView(copy(deltas)),
         matrix::DynamicView(scratch),
-        matrix::ConstDynamicView(reserve),
+        matrix::DynamicView(reserve),
         handle);
 }
 

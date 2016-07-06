@@ -8,7 +8,7 @@
 #define PRNN_H_
 
 #define PRNN_MAJOR      0
-#define PRNN_MINOR      1
+#define PRNN_MINOR      2
 #define PRNN_PATCHLEVEL 0
 
 #define PRNN_VERSION    (PRNN_MAJOR * 1000 + PRNN_MINOR * 100 + PRNN_PATCHLEVEL)
@@ -106,14 +106,21 @@ typedef enum
 typedef enum
 {
    PRNN_UNIDIRECTIONAL = 0,
-   PRNN_BIDIRECTIONAL = 1   // Using output concatination at each step. Do we also want to support output sum?
+   PRNN_BIDIRECTIONAL  = 1   // Using output concatination at each step. Do we also want to support output sum?
 } prnnDirectionMode_t;
 
 typedef enum
 {
    PRNN_LINEAR_INPUT = 0,
-   PRNN_SKIP_INPUT = 1
+   PRNN_SKIP_INPUT   = 1
 } prnnRNNInputMode_t;
+
+typedef enum
+{
+    PRNN_PERSISTENT_BACKEND = 0,
+    PRNN_CUDNN_BACKEND = 1,
+    PRNN_GEMM_BACKEND = 2
+} prnnBackend_t;
 
 struct prnnRNNStruct;
 typedef struct prnnRNNStruct* prnnRNNDescriptor_t;
@@ -123,25 +130,27 @@ prnnStatus_t prnnDestroyRNNDescriptor(prnnRNNDescriptor_t rnnDesc);
 
 prnnStatus_t prnnSetRNNDescriptor(prnnRNNDescriptor_t rnnDesc,
                                   int hiddenSize,
-                                  int seqLength,
                                   int numLayers,
                                   prnnDropoutDescriptor_t dropoutDesc, // Between layers, not between recurrent steps.
                                   prnnRNNInputMode_t inputMode,
                                   prnnDirectionMode_t direction,
                                   prnnRNNMode_t mode,
-                                  prnnDataType_t dataType);
+                                  prnnDataType_t dataType,
+                                  prnnBackend_t backend);
 
 // dataType in the RNN descriptor is used to determine math precision
 // dataType in weight descriptors and input descriptors is used to describe storage
 
 prnnStatus_t prnnGetRNNWorkspaceSize(prnnHandle_t handle,
                                      const prnnRNNDescriptor_t rnnDesc,
+                                     const int seqLength,
                                      const prnnTensorDescriptor_t* xDesc,
                                      size_t* sizeInBytes
                                      );
 
 prnnStatus_t prnnGetRNNTrainingReserveSize(prnnHandle_t handle,
                                            const prnnRNNDescriptor_t rnnDesc,
+                                           const int seqLength,
                                            const prnnTensorDescriptor_t* xDesc,
                                            size_t* sizeInBytes
                                            );
@@ -178,6 +187,7 @@ prnnStatus_t prnnGetRNNLinLayerBiasParams(prnnHandle_t handle,
 
 prnnStatus_t prnnRNNForward(prnnHandle_t handle,
                             const prnnRNNDescriptor_t rnnDesc,
+                            const int seqLength,
                             const prnnTensorDescriptor_t* xDesc,
                             const void* x,
                             const prnnTensorDescriptor_t hxDesc,
@@ -199,6 +209,7 @@ prnnStatus_t prnnRNNForward(prnnHandle_t handle,
 
 prnnStatus_t prnnRNNBackwardData(prnnHandle_t handle,
                                  const prnnRNNDescriptor_t rnnDesc,
+                                 const int seqLength,
                                  const prnnTensorDescriptor_t* yDesc,
                                  const void* y,
                                  const prnnTensorDescriptor_t* dyDesc,
@@ -221,12 +232,13 @@ prnnStatus_t prnnRNNBackwardData(prnnHandle_t handle,
                                  void* dcx,
                                  void* workspace,
                                  size_t workSpaceSizeInBytes,
-                                 const void* reserveSpace,
+                                 void* reserveSpace,
                                  size_t reserveSpaceSizeInBytes);
 
 
 prnnStatus_t prnnRNNBackwardWeights(prnnHandle_t handle,
                                     const prnnRNNDescriptor_t rnnDesc,
+                                    const int seqLength,
                                     const prnnTensorDescriptor_t* xDesc,
                                     const void* x,
                                     const prnnTensorDescriptor_t hxDesc,

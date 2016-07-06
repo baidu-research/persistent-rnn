@@ -4,11 +4,13 @@
 
 #include <prnn/detail/matrix/matrix_view.h>
 #include <prnn/detail/matrix/matrix_operations.h>
+#include <prnn/detail/matrix/copy_operations.h>
 #include <prnn/detail/matrix/blas_operations.h>
 #include <prnn/detail/matrix/operation.h>
 #include <prnn/detail/matrix/cudnn_library.h>
 
 #include <prnn/detail/parallel/cuda.h>
+#include <prnn/detail/parallel/synchronization.h>
 
 #include <prnn/detail/util/metaprogramming.h>
 #include <prnn/detail/util/logger.h>
@@ -448,6 +450,7 @@ void genericForwardPropRecurrent(
 
 void forwardPropRecurrent(
     const matrix::DynamicView& activations,
+    const matrix::ConstDynamicView& inputActivations,
     const matrix::ConstDynamicView& weights,
     const matrix::DynamicView& scratch,
     const matrix::DynamicView& reserve,
@@ -459,16 +462,23 @@ void forwardPropRecurrent(
 
     if(matrix::CudnnLibrary::isSupported() && handle.useCudnn)
     {
-        cudnnForwardPropRecurrent(activations, weights, scratch, reserve, handle);
+        parallel::setNotSynchronized();
+
+        cudnnForwardPropRecurrent(activations, inputActivations,
+            weights, scratch, reserve, handle);
     }
     else if(parallel::isCudaEnabled() && handle.allowPersistentKernels)
     {
         zeros(scratch);
 
+        copy(activations, inputActivations);
+
         detail::forwardPropRecurrentOverActivationFunctions(activations, weights, scratch, handle);
     }
     else
     {
+        copy(activations, inputActivations);
+
         detail::genericForwardPropRecurrent(activations, weights, handle);
     }
 }
@@ -723,28 +733,39 @@ void genericBackPropDeltasRecurrent(const matrix::DynamicView& deltas,
 
 }
 
-void backPropDeltasRecurrent(const matrix::DynamicView& deltas,
+void backPropDeltasRecurrent(const matrix::DynamicView& inputDeltas,
     const matrix::ConstDynamicView& weights,
-    const matrix::ConstDynamicView& activations,
+    const matrix::ConstDynamicView& outputActivations,
+    const matrix::ConstDynamicView& outputDeltas,
     const matrix::DynamicView& scratch,
-    const matrix::ConstDynamicView& reserve,
+    const matrix::DynamicView& reserve,
     const RecurrentOpsHandle& handle)
 {
     if(matrix::CudnnLibrary::isSupported() && handle.useCudnn)
     {
-        cudnnBackPropDeltasRecurrent(deltas, weights, activations, scratch, reserve,
-            handle);
+        parallel::setNotSynchronized();
+
+        cudnnBackPropDeltasRecurrent(inputDeltas, weights, outputActivations, outputDeltas,
+            scratch, reserve, handle);
     }
     else if(parallel::isCudaEnabled() && handle.allowPersistentKernels)
     {
         zeros(scratch);
 
-        detail::backPropDeltasRecurrentOverActivationFunctions(deltas, weights, activations,
-            scratch, handle);
+        copy(inputDeltas, outputDeltas);
+
+        detail::backPropDeltasRecurrentOverActivationFunctions(inputDeltas, weights,
+            outputActivations, scratch, handle);
+
+        copy(reserve, inputDeltas);
     }
     else
     {
-        detail::genericBackPropDeltasRecurrent(deltas, weights, activations, handle);
+        copy(inputDeltas, outputDeltas);
+
+        detail::genericBackPropDeltasRecurrent(inputDeltas, weights, outputActivations, handle);
+
+        copy(reserve, inputDeltas);
     }
 }
 
@@ -785,20 +806,24 @@ void backPropGradientsRecurrent(const matrix::DynamicView& dWeights,
 } // namespace detail
 
 void backPropGradientsRecurrent(const matrix::DynamicView& dWeights,
+    const matrix::ConstDynamicView& inputActivations,
     const matrix::ConstDynamicView& outputActivations,
-    const matrix::ConstDynamicView& deltas,
     const matrix::ConstDynamicView& scratch,
     const matrix::ConstDynamicView& reserve,
     const RecurrentOpsHandle& handle)
 {
     if(matrix::CudnnLibrary::isSupported() && handle.useCudnn)
     {
-        cudnnBackPropGradientsRecurrent(dWeights, outputActivations, deltas,
-            scratch, reserve, handle);
+        zeros(dWeights);
+
+        parallel::setNotSynchronized();
+
+        cudnnBackPropGradientsRecurrent(dWeights, inputActivations,
+            outputActivations, scratch, reserve, handle);
     }
     else
     {
-        detail::backPropGradientsRecurrent(dWeights, outputActivations, deltas, handle);
+        detail::backPropGradientsRecurrent(dWeights, outputActivations, reserve, handle);
     }
 }
 
@@ -813,22 +838,95 @@ static matrix::Dimension extendDimensions(const matrix::Dimension& dimensions,
     return newDimensions;
 }
 
+static matrix::Dimension getForwardPropScratchDimensions(const RecurrentOpsHandle& handle,
+    const matrix::Precision& precision)
+{
+    matrix::Dimension scratchDimension;
+
+    if(matrix::CudnnLibrary::isSupported() && handle.useCudnn)
+    {
+        scratchDimension = {cudnnGetScratchSize(handle, precision) / precision.size()};
+    }
+    else
+    {
+        matrix::Dimension dimension(handle.layerSize, handle.miniBatchSize, handle.timesteps);
+
+        scratchDimension = extendDimensions(dimension, precision);
+    }
+
+    return scratchDimension;
+}
+
 matrix::Matrix getForwardPropScratch(const RecurrentOpsHandle& handle,
     const matrix::Precision& precision)
 {
-    matrix::Dimension dimension(handle.layerSize, handle.miniBatchSize, handle.timesteps);
-
-    auto scratchDimension = extendDimensions(dimension, precision);
-
-    return matrix::Matrix(scratchDimension, precision);
+    return matrix::Matrix(getForwardPropScratchDimensions(handle, precision), precision);
 }
 
 size_t getForwardPropScratchSize(const RecurrentOpsHandle& handle,
     const matrix::Precision& precision)
 {
-    matrix::Dimension dimension(handle.layerSize, handle.miniBatchSize, handle.timesteps);
+    return getForwardPropScratchDimensions(handle, precision).product() * precision.size();
+}
 
-    return precision.size() * dimension.product();
+matrix::Dimension getReserveDimensions(const RecurrentOpsHandle& handle,
+    const matrix::Precision& precision)
+{
+    matrix::Dimension size;
+
+    if(matrix::CudnnLibrary::isSupported() && handle.useCudnn)
+    {
+        size.push_back(cudnnGetReserveSize(handle, precision) / precision.size());
+    }
+    else
+    {
+        size = {handle.layerSize, handle.miniBatchSize, handle.timesteps};
+    }
+
+    return size;
+}
+
+matrix::Dimension getWeightDimensions(const RecurrentOpsHandle& handle,
+    const matrix::Precision& precision)
+{
+    matrix::Dimension size;
+
+    if(matrix::CudnnLibrary::isSupported() && handle.useCudnn)
+    {
+        size.push_back(cudnnGetWeightsSize(handle, precision) / precision.size());
+        size.push_back(1);
+        size.push_back(1);
+    }
+    else
+    {
+        size = {handle.layerSize, handle.layerSize};
+    }
+
+    return size;
+}
+
+void getWeightsRange(matrix::Dimension& begin, matrix::Dimension& end,
+    const RecurrentOpsHandle& handle, const matrix::Precision& precision,
+    int index)
+{
+    begin.clear();
+    end.clear();
+
+    if(matrix::CudnnLibrary::isSupported() && handle.useCudnn)
+    {
+        begin.push_back(cudnnGetWeightsBegin(handle, precision, index));
+        begin.push_back(0);
+        begin.push_back(0);
+
+        end.push_back(cudnnGetWeightsEnd(handle, precision, index));
+        end.push_back(1);
+        end.push_back(1);
+    }
+    else
+    {
+        begin = {0, 0};
+        end   = {handle.layerSize, handle.layerSize};
+    }
 }
 
 matrix::Matrix getBackPropDeltasScratch(const RecurrentOpsHandle& handle,
@@ -846,13 +944,13 @@ size_t getBackPropDeltasScratchSize(const RecurrentOpsHandle& handle,
 matrix::Matrix getBackPropGradientsScratch(const RecurrentOpsHandle& handle,
     const matrix::Precision& precision)
 {
-    return matrix::Matrix();
+    return getForwardPropScratch(handle, precision);
 }
 
 size_t getBackPropGradientsScratchSize(const RecurrentOpsHandle& handle,
     const matrix::Precision& precision)
 {
-    return 0;
+    return getForwardPropScratchSize(handle, precision);
 }
 
 }

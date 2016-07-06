@@ -68,6 +68,11 @@ CUDA_DECORATOR bool Dimension::empty() const
 
 CUDA_DECORATOR size_t Dimension::product() const
 {
+    if(empty())
+    {
+        return 0;
+    }
+
     size_t size = 1;
 
     for(auto element : *this)

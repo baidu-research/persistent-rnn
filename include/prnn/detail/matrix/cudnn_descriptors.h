@@ -8,6 +8,7 @@
 
 // Standard Library Includes
 #include <memory>
+#include <vector>
 
 // Forward Declarations
 namespace prnn { namespace matrix { class Matrix;     } }
@@ -20,6 +21,7 @@ typedef struct cudnnFilterStruct*      cudnnFilterDescriptor_t;
 typedef struct cudnnConvolutionStruct* cudnnConvolutionDescriptor_t;
 typedef struct cudnnPoolingStruct*     cudnnPoolingDescriptor_t;
 typedef struct cudnnRNNStruct*         cudnnRNNDescriptor_t;
+typedef struct cudnnDropoutStruct*     cudnnDropoutDescriptor_t;
 
 namespace prnn
 {
@@ -62,7 +64,17 @@ public:
     cudnnFilterDescriptor_t& descriptor();
 
 public:
+    Dimension getDimensions() const;
+
+public:
     const void* data() const;
+
+public:
+    std::string toString() const;
+
+public:
+    CudnnFilterConstViewDescriptor& operator=(const CudnnFilterConstViewDescriptor&) = delete;
+    CudnnFilterConstViewDescriptor(const CudnnFilterConstViewDescriptor&) = delete;
 
 private:
     cudnnFilterDescriptor_t _descriptor;
@@ -83,7 +95,14 @@ public:
     cudnnFilterDescriptor_t& descriptor();
 
 public:
+    Dimension getDimensions() const;
+
+public:
     void* data() const;
+
+public:
+    CudnnFilterViewDescriptor& operator=(const CudnnFilterViewDescriptor&) = delete;
+    CudnnFilterViewDescriptor(const CudnnFilterViewDescriptor&) = delete;
 
 private:
     cudnnFilterDescriptor_t _descriptor;
@@ -118,7 +137,8 @@ private:
 class CudnnTensorViewDescriptor
 {
 public:
-    CudnnTensorViewDescriptor(void* data, const Dimension& size, const Precision& precision);
+    CudnnTensorViewDescriptor(void* data, const Dimension& size, const Dimension& strides,
+        const Precision& precision);
     CudnnTensorViewDescriptor();
     ~CudnnTensorViewDescriptor();
 
@@ -127,7 +147,17 @@ public:
     cudnnTensorDescriptor_t& descriptor();
 
 public:
+    CudnnTensorViewDescriptor& operator=(const CudnnTensorViewDescriptor&) = delete;
+    CudnnTensorViewDescriptor(const CudnnTensorViewDescriptor&) = delete;
+
+public:
     void* data() const;
+
+public:
+    Dimension getDimensions() const;
+
+public:
+    std::string toString() const;
 
 private:
     cudnnTensorDescriptor_t _descriptor;
@@ -137,11 +167,74 @@ private:
 
 };
 
+class CudnnTensorViewDescriptorArray
+{
+public:
+    CudnnTensorViewDescriptorArray(void* data, const Dimension& size, const Dimension& strides,
+        size_t timesteps, const Precision& precision);
+    ~CudnnTensorViewDescriptorArray();
+
+public:
+    cudnnTensorDescriptor_t* descriptors();
+
+public:
+    void* data() const;
+
+public:
+    Dimension getDimensions() const;
+
+public:
+    std::string toString() const;
+
+public:
+    CudnnTensorViewDescriptorArray& operator=(const CudnnTensorViewDescriptorArray&) = delete;
+    CudnnTensorViewDescriptorArray(const CudnnTensorViewDescriptorArray&) = delete;
+
+private:
+    std::vector<cudnnTensorDescriptor_t> _descriptors;
+
+private:
+    void* _data;
+
+};
+
+class CudnnTensorConstViewDescriptorArray
+{
+public:
+    CudnnTensorConstViewDescriptorArray(const void* data, const Dimension& size,
+        const Dimension& strides,
+        size_t timesteps, const Precision& precision);
+    ~CudnnTensorConstViewDescriptorArray();
+
+public:
+    cudnnTensorDescriptor_t* descriptors();
+
+public:
+    const void* data() const;
+
+public:
+    Dimension getDimensions() const;
+
+public:
+    std::string toString() const;
+
+public:
+    CudnnTensorConstViewDescriptorArray& operator=(const CudnnTensorConstViewDescriptorArray&) = delete;
+    CudnnTensorConstViewDescriptorArray(const CudnnTensorConstViewDescriptorArray&) = delete;
+
+private:
+    std::vector<cudnnTensorDescriptor_t> _descriptors;
+
+private:
+    const void* _data;
+
+};
+
 class CudnnTensorConstViewDescriptor
 {
 public:
     CudnnTensorConstViewDescriptor(const void* data,
-        const Dimension& size, const Precision& precision);
+        const Dimension& size, const Dimension& strides, const Precision& precision);
     CudnnTensorConstViewDescriptor();
     ~CudnnTensorConstViewDescriptor();
 
@@ -151,6 +244,10 @@ public:
 
 public:
     const void* data() const;
+
+public:
+    CudnnTensorConstViewDescriptor& operator=(const CudnnTensorConstViewDescriptor&) = delete;
+    CudnnTensorConstViewDescriptor(const CudnnTensorConstViewDescriptor&) = delete;
 
 private:
     cudnnTensorDescriptor_t _descriptor;
@@ -260,7 +357,7 @@ private:
 class CudnnRNNDescriptor
 {
 public:
-    CudnnRNNDescriptor(int hiddenSize, int seqLength, int numLayers, int inputMode,
+    CudnnRNNDescriptor(int hiddenSize, int numLayers, int inputMode,
         int direction, int mode, int dataType);
     ~CudnnRNNDescriptor();
 
@@ -273,7 +370,8 @@ public:
     CudnnRNNDescriptor(const CudnnRNNDescriptor&) = delete;
 
 private:
-    cudnnRNNDescriptor_t _descriptor;
+    cudnnRNNDescriptor_t     _descriptor;
+    cudnnDropoutDescriptor_t _dropoutDescriptor;
 
 
 };

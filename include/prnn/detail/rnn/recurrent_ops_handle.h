@@ -78,14 +78,19 @@ public:
         layerSize(layerSize),
         miniBatchSize(miniBatchSize),
         timesteps(timesteps),
+        layers(layers),
         allowPersistentKernels(allowPersistentKernels),
         useCudnn(useCudnn),
         skipConnectionScale(skipConnectionScale),
         activationFunction(activationFunction),
         direction(direction),
         layerType(layerType),
+        inputMode(inputMode),
         stream(stream)
     {}
+
+public:
+    std::string toString() const;
 
 public:
     size_t layerSize;
