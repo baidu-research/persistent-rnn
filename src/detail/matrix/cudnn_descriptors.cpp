@@ -140,14 +140,14 @@ Dimension CudnnFilterConstViewDescriptor::getDimensions() const
     return result;
 }
 
-const void* CudnnFilterConstViewDescriptor::data() const
-{
-    return _data;
-}
-
 std::string CudnnFilterConstViewDescriptor::toString() const
 {
     return getDimensions().toString();
+}
+
+const void* CudnnFilterConstViewDescriptor::data() const
+{
+    return _data;
 }
 
 CudnnFilterViewDescriptor::CudnnFilterViewDescriptor(void* data, const Dimension& size,
@@ -204,6 +204,11 @@ Dimension CudnnFilterViewDescriptor::getDimensions() const
     }
 
     return result;
+}
+
+std::string CudnnFilterViewDescriptor::toString() const
+{
+    return getDimensions().toString();
 }
 
 void* CudnnFilterViewDescriptor::data() const
@@ -489,7 +494,7 @@ CudnnTensorConstViewDescriptor::CudnnTensorConstViewDescriptor(
 {
     CudnnLibrary::cudnnCreateTensorDescriptor(&_descriptor);
 
-    auto dimensions = getDimensions(size);
+    auto dimensions = matrix::getDimensions(size);
     auto strides    = getStrides(stride);
 
     CudnnLibrary::cudnnSetTensorNdDescriptor(_descriptor,

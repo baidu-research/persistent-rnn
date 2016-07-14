@@ -160,6 +160,22 @@ std::unique_ptr<CudnnTensorViewDescriptor> getEmptyLayerInputDescriptor(
         strides, precision);
 }
 
+static std::string toString(RecurrentLayerBackend backend)
+{
+    if(backend == RECURRENT_CUDNN_BACKEND)
+    {
+        return "cudnn backend";
+    }
+    else if(backend == RECURRENT_PERSISTENT_BACKEND)
+    {
+        return "persistent backend";
+    }
+    else
+    {
+        return "generic backend";
+    }
+}
+
 void cudnnForwardPropRecurrent(
     const matrix::DynamicView& activations,
     const matrix::ConstDynamicView& inputActivations,
@@ -189,9 +205,11 @@ void cudnnForwardPropRecurrent(
     prnn::util::log("CudnnOps") << "cy             " << cyDescriptor->toString() << "\n";
     prnn::util::log("CudnnOps") << "Input Weights  " << weightsDescriptor->toString() << "\n";
     prnn::util::log("CudnnOps") << "Handle         " << handle.toString() << "\n";
+    prnn::util::log("CudnnOps") << "Backend        " << toString(getBackend(handle, inputActivations.precision())) << "\n";
     prnn::util::log("CudnnOps") << "Scratch size   " << scratch.elements() * scratch.precision().size() << "\n";
     prnn::util::log("CudnnOps") << "Reserve size   " << reserve.elements() * reserve.precision().size() << "\n";
 
+    CudnnLibrary::cudnnSetStream(handle.stream);
     CudnnLibrary::cudnnRNNForwardTraining(rnnDescriptor->descriptor(),
                                           handle.timesteps,
                                           xDescriptor->descriptors(),
@@ -252,8 +270,11 @@ void cudnnBackPropDeltasRecurrent(const matrix::DynamicView& deltas,
     prnn::util::log("CudnnOps") << "dcx            " << dcxDescriptor->toString() << "\n";
     prnn::util::log("CudnnOps") << "dx             " << dxDescriptor->toString() << "\n";
     prnn::util::log("CudnnOps") << "Handle         " << handle.toString() << "\n";
+    prnn::util::log("CudnnOps") << "Backend        " << toString(getBackend(handle, deltas.precision())) << "\n";
     prnn::util::log("CudnnOps") << "Scratch size   " << scratch.elements() * scratch.precision().size() << "\n";
     prnn::util::log("CudnnOps") << "Reserve size   " << reserve.elements() * reserve.precision().size() << "\n";
+
+    CudnnLibrary::cudnnSetStream(handle.stream);
 
     CudnnLibrary::cudnnRNNBackwardData(rnnDescriptor->descriptor(),
                                        handle.timesteps,
@@ -299,6 +320,16 @@ void cudnnBackPropGradientsRecurrent(const matrix::DynamicView& dWeights,
 
     auto weightsDescriptor = getFilterDescriptor(dWeights);
 
+    prnn::util::log("CudnnOps") << "Running cudnnRNNBackwardData\n";
+    prnn::util::log("CudnnOps") << "y              " << yDescriptor->toString() << "\n";
+    prnn::util::log("CudnnOps") << "Input Weights  " << weightsDescriptor->toString() << "\n";
+    prnn::util::log("CudnnOps") << "hx             " << hxDescriptor->toString() << "\n";
+    prnn::util::log("CudnnOps") << "Handle         " << handle.toString() << "\n";
+    prnn::util::log("CudnnOps") << "Backend        " << toString(getBackend(handle, dWeights.precision())) << "\n";
+    prnn::util::log("CudnnOps") << "Scratch size   " << scratch.elements() * scratch.precision().size() << "\n";
+    prnn::util::log("CudnnOps") << "Reserve size   " << reserve.elements() * reserve.precision().size() << "\n";
+
+    CudnnLibrary::cudnnSetStream(handle.stream);
     CudnnLibrary::cudnnRNNBackwardWeights(rnnDescriptor->descriptor(),
                                           handle.timesteps,
                                           xDescriptor->descriptors(),
@@ -421,7 +452,7 @@ void getOffsetAndDimensions(size_t& offset, matrix::Dimension& dimensions,
     {
         CudnnLibrary::cudnnGetRNNLinLayerMatrixParams(rnnDescriptor->descriptor(),
                                                       getLayer(handle, index),
-                                                      xDescriptor.descriptors(),
+                                                      *xDescriptor.descriptors(),
                                                       wDescriptor.descriptor(),
                                                       nullptr,
                                                       getIdInLayer(handle, index),
@@ -432,7 +463,7 @@ void getOffsetAndDimensions(size_t& offset, matrix::Dimension& dimensions,
     {
         CudnnLibrary::cudnnGetRNNLinLayerBiasParams(rnnDescriptor->descriptor(),
                                                     getLayer(handle, index),
-                                                    xDescriptor.descriptors(),
+                                                    *xDescriptor.descriptors(),
                                                     wDescriptor.descriptor(),
                                                     nullptr,
                                                     getIdInLayer(handle, index),

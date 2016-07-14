@@ -131,13 +131,11 @@ FloatReference::operator double() const
 
 void* FloatReference::address()
 {
-    parallel::synchronize();
     return _data;
 }
 
 const void* FloatReference::address() const
 {
-    parallel::synchronize();
     return _data;
 }
 
@@ -154,7 +152,6 @@ ConstFloatReference::operator double() const
 
 const void* ConstFloatReference::address() const
 {
-    parallel::synchronize();
     return _data;
 }
 

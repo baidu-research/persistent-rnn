@@ -350,32 +350,7 @@ static prnn::matrix::ConstDynamicView constructWeightsView(
 
 static bool isSupported(prnnRNNDescriptor_t desc)
 {
-    if(desc->mode == PRNN_GRU || desc->mode == PRNN_LSTM)
-    {
-        return false;
-    }
-
-    if(desc->inputMode == PRNN_LINEAR_INPUT)
-    {
-        return false;
-    }
-
-    if(desc->direction == PRNN_BIDIRECTIONAL)
-    {
-        return false;
-    }
-
-    if(desc->dataType != PRNN_DATA_FLOAT)
-    {
-        return false;
-    }
-
-    if(desc->hiddenSize > prnn::rnn::getMaximumSizeRNNForThisGPU(getPrecision(desc->dataType)))
-    {
-        return false;
-    }
-
-    if(desc->numberOfLayers > 1)
+    if(desc->direction == PRNN_REVERSE)
     {
         return false;
     }
@@ -426,9 +401,13 @@ static prnn::RecurrentLayerDirection getDirection(prnnDirectionMode_t mode)
     {
         return prnn::RECURRENT_FORWARD;
     }
-    else
+    else if (mode == PRNN_BIDIRECTIONAL)
     {
         return prnn::RECURRENT_BIDIRECTIONAL;
+    }
+    else
+    {
+        return prnn::RECURRENT_REVERSE;
     }
 }
 
@@ -460,14 +439,20 @@ static prnn::RecurrentLayerInputMode getLayerInputMode(prnnRNNInputMode_t mode)
     }
 }
 
-static bool getAllowsPersistentKernels(prnnBackend_t backend)
+static prnn::RecurrentLayerBackend getBackend(prnnBackend_t backend)
 {
-    return backend == PRNN_PERSISTENT_BACKEND;
-}
-
-static bool getUseCudnn(prnnBackend_t backend)
-{
-    return backend == PRNN_CUDNN_BACKEND;
+    if(backend == PRNN_PERSISTENT_BACKEND)
+    {
+        return prnn::RECURRENT_PERSISTENT_BACKEND;
+    }
+    else if(backend == PRNN_CUDNN_BACKEND)
+    {
+        return prnn::RECURRENT_CUDNN_BACKEND;
+    }
+    else
+    {
+        return prnn::RECURRENT_BEST_BACKEND;
+    }
 }
 
 static prnn::RecurrentOpsHandle constructHandle(prnnHandle_t handle,
@@ -479,8 +464,7 @@ static prnn::RecurrentOpsHandle constructHandle(prnnHandle_t handle,
         getDirection(rnnDesc->direction),
         getLayerType(rnnDesc->mode),
         getLayerInputMode(rnnDesc->inputMode),
-        getAllowsPersistentKernels(rnnDesc->backend),
-        getUseCudnn(rnnDesc->backend));
+        getBackend(rnnDesc->backend));
 }
 
 prnnStatus_t prnnGetRNNWorkspaceSize(prnnHandle_t cHandle,

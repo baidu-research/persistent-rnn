@@ -210,7 +210,6 @@ public:
         layerSize(handle.layerSize),
         miniBatchSize(handle.miniBatchSize),
         timesteps(handle.timesteps),
-        allowPersistentKernels(handle.allowPersistentKernels),
         skipConnectionScale(handle.skipConnectionScale),
         direction(handle.direction)
     {}
@@ -219,7 +218,6 @@ public:
     size_t layerSize;
     size_t miniBatchSize;
     size_t timesteps;
-    bool   allowPersistentKernels;
     double skipConnectionScale;
 
 public:

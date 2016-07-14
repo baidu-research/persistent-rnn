@@ -33,8 +33,8 @@ template<RecurrentLayerDirection direction, typename T, size_t sms, size_t smMaj
 class TileSelector
 {
 public:
-    //typedef TileConfig<1, 192, 192, 192, 288, 6, 36, direction, T> TileSize;
-    typedef TileConfig<1, 8, 8, 4, 4, 2, 4, direction, T> TileSize;
+    typedef TileConfig<1, 192, 192, 192, 288, 6, 36, direction, T> TileSize;
+    //typedef TileConfig<1, 8, 8, 4, 4, 2, 4, direction, T> TileSize;
 
 };
 
@@ -460,14 +460,16 @@ void forwardPropRecurrent(
     assert(activations.precision() == scratch.precision());
     assert(activations.precision() == reserve.precision());
 
-    if(matrix::CudnnLibrary::isSupported() && handle.useCudnn)
+    auto backend = getBackend(handle, activations.precision());
+
+    if(backend == RECURRENT_CUDNN_BACKEND)
     {
         parallel::setNotSynchronized();
 
         cudnnForwardPropRecurrent(activations, inputActivations,
             weights, scratch, reserve, handle);
     }
-    else if(parallel::isCudaEnabled() && handle.allowPersistentKernels)
+    else if(backend == RECURRENT_PERSISTENT_BACKEND)
     {
         zeros(scratch);
 
@@ -741,14 +743,17 @@ void backPropDeltasRecurrent(const matrix::DynamicView& inputDeltas,
     const matrix::DynamicView& reserve,
     const RecurrentOpsHandle& handle)
 {
-    if(matrix::CudnnLibrary::isSupported() && handle.useCudnn)
+    auto backend = getBackend(handle, weights.precision());
+
+
+    if(backend == RECURRENT_CUDNN_BACKEND)
     {
         parallel::setNotSynchronized();
 
         cudnnBackPropDeltasRecurrent(inputDeltas, weights, outputActivations, outputDeltas,
             scratch, reserve, handle);
     }
-    else if(parallel::isCudaEnabled() && handle.allowPersistentKernels)
+    else if(backend == RECURRENT_PERSISTENT_BACKEND)
     {
         zeros(scratch);
 
@@ -812,7 +817,9 @@ void backPropGradientsRecurrent(const matrix::DynamicView& dWeights,
     const matrix::ConstDynamicView& reserve,
     const RecurrentOpsHandle& handle)
 {
-    if(matrix::CudnnLibrary::isSupported() && handle.useCudnn)
+    auto backend = getBackend(handle, dWeights.precision());
+
+    if(backend == RECURRENT_CUDNN_BACKEND)
     {
         zeros(dWeights);
 
@@ -823,7 +830,10 @@ void backPropGradientsRecurrent(const matrix::DynamicView& dWeights,
     }
     else
     {
-        detail::backPropGradientsRecurrent(dWeights, outputActivations, reserve, handle);
+        detail::backPropGradientsRecurrent(
+            reshape(dWeights, getWeightDimensions(handle, dWeights.precision())),
+            outputActivations,
+            reshape(reserve, {handle.layerSize, handle.miniBatchSize, handle.timesteps}), handle);
     }
 }
 
@@ -843,7 +853,9 @@ static matrix::Dimension getForwardPropScratchDimensions(const RecurrentOpsHandl
 {
     matrix::Dimension scratchDimension;
 
-    if(matrix::CudnnLibrary::isSupported() && handle.useCudnn)
+    auto backend = getBackend(handle, precision);
+
+    if(backend == RECURRENT_CUDNN_BACKEND)
     {
         scratchDimension = {cudnnGetScratchSize(handle, precision) / precision.size()};
     }
@@ -874,7 +886,9 @@ matrix::Dimension getReserveDimensions(const RecurrentOpsHandle& handle,
 {
     matrix::Dimension size;
 
-    if(matrix::CudnnLibrary::isSupported() && handle.useCudnn)
+    auto backend = getBackend(handle, precision);
+
+    if(backend == RECURRENT_CUDNN_BACKEND)
     {
         size.push_back(cudnnGetReserveSize(handle, precision) / precision.size());
     }
@@ -891,7 +905,9 @@ matrix::Dimension getWeightDimensions(const RecurrentOpsHandle& handle,
 {
     matrix::Dimension size;
 
-    if(matrix::CudnnLibrary::isSupported() && handle.useCudnn)
+    auto backend = getBackend(handle, precision);
+
+    if(backend == RECURRENT_CUDNN_BACKEND)
     {
         size.push_back(cudnnGetWeightsSize(handle, precision) / precision.size());
         size.push_back(1);
@@ -912,7 +928,9 @@ void getWeightsRange(matrix::Dimension& begin, matrix::Dimension& end,
     begin.clear();
     end.clear();
 
-    if(matrix::CudnnLibrary::isSupported() && handle.useCudnn)
+    auto backend = getBackend(handle, precision);
+
+    if(backend == RECURRENT_CUDNN_BACKEND)
     {
         begin.push_back(cudnnGetWeightsBegin(handle, precision, index));
         begin.push_back(0);

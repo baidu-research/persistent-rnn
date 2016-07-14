@@ -42,6 +42,19 @@ bool CudnnLibrary::isSupported()
     return loaded();
 }
 
+void CudnnLibrary::cudnnSetStream(void* stream)
+{
+    _check();
+
+    auto status = (*_interface.cudnnSetStream)(_interface.getHandle(), stream);
+
+    if(status != CUDNN_STATUS_SUCCESS)
+    {
+        throw std::runtime_error("cudnnSetStream failed: " +
+            _interface.getErrorString(status));
+    }
+}
+
 /* Create an instance of a generic Tensor descriptor */
 void CudnnLibrary::cudnnCreateTensorDescriptor(cudnnTensorDescriptor_t* tensorDesc)
 {
@@ -816,7 +829,7 @@ void CudnnLibrary::cudnnGetRNNParamsSize(const cudnnRNNDescriptor_t rnnDesc,
 
 void CudnnLibrary::cudnnGetRNNLinLayerMatrixParams(const cudnnRNNDescriptor_t rnnDesc,
                                                    const int layer,
-                                                   const cudnnTensorDescriptor_t* xDesc,
+                                                   const cudnnTensorDescriptor_t xDesc,
                                                    const cudnnFilterDescriptor_t wDesc,
                                                    const void* w,
                                                    const int linLayerID,
@@ -844,7 +857,7 @@ void CudnnLibrary::cudnnGetRNNLinLayerMatrixParams(const cudnnRNNDescriptor_t rn
 
 void CudnnLibrary::cudnnGetRNNLinLayerBiasParams(const cudnnRNNDescriptor_t rnnDesc,
                                                  const int layer,
-                                                 const cudnnTensorDescriptor_t* xDesc,
+                                                 const cudnnTensorDescriptor_t xDesc,
                                                  const cudnnFilterDescriptor_t wDesc,
                                                  const void* w,
                                                  const int linLayerID,
@@ -1088,6 +1101,8 @@ void CudnnLibrary::Interface::load()
         #define DynLink( function ) \
             util::bit_cast(function, dlsym(_library, #function)); \
             checkFunction((void*)function, #function)
+
+        DynLink(cudnnSetStream);
 
         DynLink(cudnnGetErrorString);
         DynLink(cudnnCreate);

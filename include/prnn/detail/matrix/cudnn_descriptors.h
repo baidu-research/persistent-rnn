@@ -98,6 +98,9 @@ public:
     Dimension getDimensions() const;
 
 public:
+    std::string toString() const;
+
+public:
     void* data() const;
 
 public:
@@ -244,6 +247,12 @@ public:
 
 public:
     const void* data() const;
+
+public:
+    Dimension getDimensions() const;
+
+public:
+    std::string toString() const;
 
 public:
     CudnnTensorConstViewDescriptor& operator=(const CudnnTensorConstViewDescriptor&) = delete;

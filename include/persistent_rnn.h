@@ -106,7 +106,8 @@ typedef enum
 typedef enum
 {
    PRNN_UNIDIRECTIONAL = 0,
-   PRNN_BIDIRECTIONAL  = 1   // Using output concatination at each step. Do we also want to support output sum?
+   PRNN_BIDIRECTIONAL  = 1,  // Using output concatination at each step. Do we also want to support output sum?
+   PRNN_REVERSE        = 2
 } prnnDirectionMode_t;
 
 typedef enum
@@ -119,7 +120,7 @@ typedef enum
 {
     PRNN_PERSISTENT_BACKEND = 0,
     PRNN_CUDNN_BACKEND = 1,
-    PRNN_GEMM_BACKEND = 2
+    PRNN_BEST_BACKEND = 2
 } prnnBackend_t;
 
 struct prnnRNNStruct;

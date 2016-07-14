@@ -144,6 +144,9 @@ public:
     static bool isSupported();
 
 public:
+    static void cudnnSetStream(void* stream);
+
+public:
     /* Create an instance of a generic Tensor descriptor */
     static void cudnnCreateTensorDescriptor(cudnnTensorDescriptor_t* tensorDesc);
 
@@ -401,7 +404,7 @@ public:
 public:
     static void cudnnGetRNNLinLayerMatrixParams(const cudnnRNNDescriptor_t rnnDesc,
                                                 const int layer,
-                                                const cudnnTensorDescriptor_t* xDesc,
+                                                const cudnnTensorDescriptor_t xDesc,
                                                 const cudnnFilterDescriptor_t wDesc,
                                                 const void* w,
                                                 const int linLayerID,
@@ -410,7 +413,7 @@ public:
 
     static void cudnnGetRNNLinLayerBiasParams(const cudnnRNNDescriptor_t rnnDesc,
                                               const int layer,
-                                              const cudnnTensorDescriptor_t* xDesc,
+                                              const cudnnTensorDescriptor_t xDesc,
                                               const cudnnFilterDescriptor_t wDesc,
                                               const void* w,
                                               const int linLayerID,
@@ -495,6 +498,7 @@ private:
         const char* (*cudnnGetErrorString)(cudnnStatus_t status);
 
         cudnnStatus_t (*cudnnCreate)(cudnnHandle_t* handle);
+        cudnnStatus_t (*cudnnSetStream)(cudnnHandle_t handle, void* stream);
         cudnnStatus_t (*cudnnDestroy)(cudnnHandle_t handle);
 
     public:
@@ -767,7 +771,7 @@ private:
         cudnnStatus_t (*cudnnGetRNNLinLayerMatrixParams)(cudnnHandle_t handle,
                                                          const cudnnRNNDescriptor_t rnnDesc,
                                                          const int layer,
-                                                         const cudnnTensorDescriptor_t* xDesc,
+                                                         const cudnnTensorDescriptor_t xDesc,
                                                          const cudnnFilterDescriptor_t wDesc,
                                                          const void* w,
                                                          const int linLayerID,
@@ -777,7 +781,7 @@ private:
         cudnnStatus_t (*cudnnGetRNNLinLayerBiasParams)(cudnnHandle_t handle,
                                                        const cudnnRNNDescriptor_t rnnDesc,
                                                        const int layer,
-                                                       const cudnnTensorDescriptor_t* xDesc,
+                                                       const cudnnTensorDescriptor_t xDesc,
                                                        const cudnnFilterDescriptor_t wDesc,
                                                        const void* w,
                                                        const int linLayerID,

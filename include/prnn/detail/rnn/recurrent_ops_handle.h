@@ -7,6 +7,7 @@
 
 // Forward Declarations
 namespace prnn { namespace matrix { class Operation; } }
+namespace prnn { namespace matrix { class Precision; } }
 
 namespace prnn
 {
@@ -29,6 +30,19 @@ enum RecurrentLayerInputMode
 {
     RECURRENT_LINEAR_INPUT,
     RECURRENT_SKIP_INPUT
+};
+
+enum RecurrentLayerBackend
+{
+    RECURRENT_CUDNN_BACKEND,
+    RECURRENT_PERSISTENT_BACKEND,
+    RECURRENT_GENERIC_BACKEND,
+    RECURRENT_BEST_BACKEND
+};
+
+class NotSupported
+{
+
 };
 
 class RecurrentActivationFunction
@@ -70,8 +84,7 @@ public:
         RecurrentLayerDirection direction = RECURRENT_FORWARD,
         RecurrentLayerType layerType = RECURRENT_SIMPLE_TYPE,
         RecurrentLayerInputMode inputMode = RECURRENT_SKIP_INPUT,
-        bool allowPersistentKernels = true,
-        bool useCudnn = false,
+        RecurrentLayerBackend backend = RECURRENT_BEST_BACKEND,
         double skipConnectionScale = 0.0,
         void* stream = nullptr) :
 
@@ -79,13 +92,12 @@ public:
         miniBatchSize(miniBatchSize),
         timesteps(timesteps),
         layers(layers),
-        allowPersistentKernels(allowPersistentKernels),
-        useCudnn(useCudnn),
         skipConnectionScale(skipConnectionScale),
         activationFunction(activationFunction),
         direction(direction),
         layerType(layerType),
         inputMode(inputMode),
+        backend(backend),
         stream(stream)
     {}
 
@@ -101,10 +113,6 @@ public:
     size_t layers;
 
 public:
-    bool allowPersistentKernels;
-    bool useCudnn;
-
-public:
     double skipConnectionScale;
 
 public:
@@ -112,10 +120,14 @@ public:
     RecurrentLayerDirection     direction;
     RecurrentLayerType          layerType;
     RecurrentLayerInputMode     inputMode;
+    RecurrentLayerBackend       backend;
 
 public:
     void* stream;
 };
+
+RecurrentLayerBackend getBackend(const RecurrentOpsHandle& handle,
+    const matrix::Precision& precision);
 
 }
 
