@@ -364,7 +364,7 @@ void TestSimpleRecurrentOpsGradientCheck(const Options& options)
 
     auto weights = createWeightsRecurrent(handle, precision);
     rand(weights);
-    apply(weights, weights, prnn::matrix::Multiply(1.0/std::sqrt(layerSize)));
+    apply(weights, weights, prnn::matrix::Multiply(2.0/(timesteps*layerSize)));
 
     samples = std::min(weights.elements(), samples);
 
@@ -1220,17 +1220,31 @@ void RunTest(const std::string& testName, void (*function)(const Options& option
     }
 }
 
+bool isPersistentBackendSelected(const Options& options)
+{
+    return prnn::getBackend(prnn::RecurrentOpsHandle(options.layerSize,
+            options.miniBatchSize,
+            options.timesteps,
+            options.layers,
+            prnn::RecurrentRectifiedLinear(),
+            options.direction,
+            options.layerType,
+            options.inputType,
+            getBackend(options.backend),
+            0.0), prnn::matrix::SinglePrecision());
+}
+
 std::vector<Options> getSweepRange(const Options& initialOptions)
 {
     std::vector<Options> range;
 
-    auto layerSizes = {2, 192, 512};
-    auto miniBatchSizes = {1, 7};
+    auto layerSizes = {512, 2, 192};
+    auto miniBatchSizes = {7, 1};
     auto timesteps = {2, 13};
-    auto inputTypes = {prnn::RECURRENT_LINEAR_INPUT, prnn::RECURRENT_SKIP_INPUT};
+    auto inputTypes = {prnn::RECURRENT_SKIP_INPUT, prnn::RECURRENT_LINEAR_INPUT};
     auto directions = {prnn::RECURRENT_FORWARD};
     auto scales = {0.0, 0.5};
-    auto layerTypes = {prnn::RECURRENT_GRU_TYPE, prnn::RECURRENT_LSTM_TYPE,
+    auto layerTypes = {prnn::RECURRENT_LSTM_TYPE, prnn::RECURRENT_GRU_TYPE,
         prnn::RECURRENT_SIMPLE_TYPE};
 
     Options options = initialOptions;
@@ -1265,17 +1279,27 @@ std::vector<Options> getSweepRange(const Options& initialOptions)
 
                                 options.allowNotSupported = false;
 
+                                if(inputType == prnn::RECURRENT_SKIP_INPUT &&
+                                    !isPersistentBackendSelected(options))
+                                {
+                                    break;
+                                }
+
                                 range.push_back(options);
-                                range.back().backend = prnn::RECURRENT_BEST_BACKEND;
-/*
+                                range.back().backend = "best";
+
                                 options.allowNotSupported = true;
 
                                 range.push_back(options);
-                                range.back().backend = prnn::RECURRENT_CUDNN_BACKEND;
+                                range.back().backend = "cudnn";
 
                                 range.push_back(options);
-                                range.back().backend = prnn::RECURRENT_PERSISTENT_BACKEND;
-*/
+                                range.back().backend = "persistent";
+
+                                if(layerType != prnn::RECURRENT_SIMPLE_TYPE)
+                                {
+                                    break;
+                                }
                             }
                         }
                     }
@@ -1295,19 +1319,21 @@ void runSweep(const Options& initialOptions)
     {
         std::cout << "Running tests for " << options.toString() << "\n";
 
-        RunTest(" C Interface Tensor Test",       TestCTensor,                   options);
-        RunTest(" C Interface RNN Test",          TestCRNN,                      options);
-        RunTest(" C Interface Forward Ops Test",  TestCForwardOps,               options);
-        RunTest(" C Interface Delta Ops Test",    TestCDeltaOps,                 options);
-        RunTest(" C Interface Gradient Ops Test", TestCGradientOps,              options);
-        RunTest(" Simple Recurrent Ops Test",     TestSimpleRecurrentOps,        options);
-        RunTest(" Recurrent Ops Gradient Check",  TestRecurrentOpsGradientCheck, options);
+        RunTest("C Interface Tensor Test",       TestCTensor,                   options);
+        RunTest("C Interface RNN Test",          TestCRNN,                      options);
+        RunTest("C Interface Forward Ops Test",  TestCForwardOps,               options);
+        RunTest("C Interface Delta Ops Test",    TestCDeltaOps,                 options);
+        RunTest("C Interface Gradient Ops Test", TestCGradientOps,              options);
+        RunTest("Simple Recurrent Ops Test",     TestSimpleRecurrentOps,        options);
+        RunTest("Recurrent Ops Gradient Check",  TestRecurrentOpsGradientCheck, options);
 
         if(options.failed && options.haltOnFailure)
         {
             return;
         }
     }
+
+    std::cout << "All Tests Passed\n";
 }
 
 int main(int argc, char** argv)
@@ -1325,7 +1351,7 @@ int main(int argc, char** argv)
     options.verbose       = false;
     options.epsilon       = 1.0e-3;
 
-    options.gradientCheckSamples = 4;
+    options.gradientCheckSamples = 8;
 
     options.haltOnFailure = true;
 

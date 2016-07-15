@@ -154,6 +154,7 @@ static bool isPersistentBackendSupported(const RecurrentOpsHandle& handle,
             handle.layers == 1 &&
             handle.miniBatchSize >= 3 &&
             handle.layerType == RECURRENT_SIMPLE_TYPE &&
+            handle.inputMode == RECURRENT_SKIP_INPUT &&
             handle.layerSize % 4 == 0 &&
             handle.layerSize <= rnn::getMaximumSizeRNNForThisGPU(precision) &&
             (precision == matrix::SinglePrecision() || precision == matrix::HalfPrecision());
