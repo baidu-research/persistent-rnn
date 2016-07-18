@@ -1222,7 +1222,8 @@ void RunTest(const std::string& testName, void (*function)(const Options& option
 
 bool isPersistentBackendSelected(const Options& options)
 {
-    return prnn::getBackend(prnn::RecurrentOpsHandle(options.layerSize,
+    return prnn::RECURRENT_PERSISTENT_BACKEND ==
+        prnn::getBackend(prnn::RecurrentOpsHandle(options.layerSize,
             options.miniBatchSize,
             options.timesteps,
             options.layers,

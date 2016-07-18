@@ -460,7 +460,7 @@ void forwardPropRecurrent(
     assert(activations.precision() == scratch.precision());
     assert(activations.precision() == reserve.precision());
 
-    auto backend = getBackend(handle, activations.precision());
+    auto backend = getBackendThrowOnError(handle, activations.precision());
 
     if(backend == RECURRENT_CUDNN_BACKEND)
     {
@@ -743,8 +743,7 @@ void backPropDeltasRecurrent(const matrix::DynamicView& inputDeltas,
     const matrix::DynamicView& reserve,
     const RecurrentOpsHandle& handle)
 {
-    auto backend = getBackend(handle, weights.precision());
-
+    auto backend = getBackendThrowOnError(handle, weights.precision());
 
     if(backend == RECURRENT_CUDNN_BACKEND)
     {
@@ -817,7 +816,7 @@ void backPropGradientsRecurrent(const matrix::DynamicView& dWeights,
     const matrix::ConstDynamicView& reserve,
     const RecurrentOpsHandle& handle)
 {
-    auto backend = getBackend(handle, dWeights.precision());
+    auto backend = getBackendThrowOnError(handle, dWeights.precision());
 
     if(backend == RECURRENT_CUDNN_BACKEND)
     {
@@ -853,7 +852,7 @@ static matrix::Dimension getForwardPropScratchDimensions(const RecurrentOpsHandl
 {
     matrix::Dimension scratchDimension;
 
-    auto backend = getBackend(handle, precision);
+    auto backend = getBackendThrowOnError(handle, precision);
 
     if(backend == RECURRENT_CUDNN_BACKEND)
     {
@@ -886,7 +885,7 @@ matrix::Dimension getReserveDimensions(const RecurrentOpsHandle& handle,
 {
     matrix::Dimension size;
 
-    auto backend = getBackend(handle, precision);
+    auto backend = getBackendThrowOnError(handle, precision);
 
     if(backend == RECURRENT_CUDNN_BACKEND)
     {
@@ -905,7 +904,7 @@ matrix::Dimension getWeightDimensions(const RecurrentOpsHandle& handle,
 {
     matrix::Dimension size;
 
-    auto backend = getBackend(handle, precision);
+    auto backend = getBackendThrowOnError(handle, precision);
 
     if(backend == RECURRENT_CUDNN_BACKEND)
     {
@@ -928,7 +927,7 @@ void getWeightsRange(matrix::Dimension& begin, matrix::Dimension& end,
     begin.clear();
     end.clear();
 
-    auto backend = getBackend(handle, precision);
+    auto backend = getBackendThrowOnError(handle, precision);
 
     if(backend == RECURRENT_CUDNN_BACKEND)
     {
