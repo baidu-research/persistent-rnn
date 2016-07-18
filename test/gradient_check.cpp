@@ -1323,6 +1323,12 @@ std::vector<Options> getSweepRange(const Options& initialOptions)
                                     break;
                                 }
 
+                                if(inputType == prnn::RECURRENT_LINEAR_INPUT)
+                                {
+                                    options.allowNotSupported = true;
+                                }
+
+
                                 range.push_back(options);
                                 range.back().backend = "best";
 
