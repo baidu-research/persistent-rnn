@@ -1251,6 +1251,11 @@ bool isCudnnSupported(const Options& options)
 
 std::vector<Options> getSweepRange(const Options& initialOptions)
 {
+    if(!initialOptions.runSweep)
+    {
+        return {initialOptions};
+    }
+
     std::vector<Options> range;
 
     auto layerSizes = {512, 2, 192};
