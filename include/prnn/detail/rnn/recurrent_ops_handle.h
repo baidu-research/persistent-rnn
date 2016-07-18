@@ -130,6 +130,8 @@ RecurrentLayerBackend getBackend(const RecurrentOpsHandle& handle,
     const matrix::Precision& precision);
 RecurrentLayerBackend getBackendThrowOnError(const RecurrentOpsHandle& handle,
     const matrix::Precision& precision);
+bool isCudnnBackendSupported(const RecurrentOpsHandle& handle,
+    const matrix::Precision& precision);
 
 }
 

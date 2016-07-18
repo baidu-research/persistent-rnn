@@ -1235,6 +1235,20 @@ bool isPersistentBackendSelected(const Options& options)
             0.0), prnn::matrix::SinglePrecision());
 }
 
+bool isCudnnSupported(const Options& options)
+{
+    return prnn::isCudnnBackendSupported(prnn::RecurrentOpsHandle(options.layerSize,
+            options.miniBatchSize,
+            options.timesteps,
+            options.layers,
+            prnn::RecurrentRectifiedLinear(),
+            options.direction,
+            options.layerType,
+            options.inputType,
+            getBackend(options.backend),
+            0.0), prnn::matrix::SinglePrecision());
+}
+
 std::vector<Options> getSweepRange(const Options& initialOptions)
 {
     std::vector<Options> range;
@@ -1279,6 +1293,12 @@ std::vector<Options> getSweepRange(const Options& initialOptions)
                                 options.skipConnectionScale = scale;
 
                                 options.allowNotSupported = false;
+
+                                if(!isCudnnSupported(options) &&
+                                    layerType != prnn::RECURRENT_SIMPLE_TYPE)
+                                {
+                                    options.allowNotSupported = true;
+                                }
 
                                 if(inputType == prnn::RECURRENT_SKIP_INPUT &&
                                     !isPersistentBackendSelected(options))

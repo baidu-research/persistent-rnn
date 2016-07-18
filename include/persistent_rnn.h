@@ -126,7 +126,7 @@ typedef enum
 struct prnnRNNStruct;
 typedef struct prnnRNNStruct* prnnRNNDescriptor_t;
 
-prnnStatus_t prnnCreateRNNDescriptor(prnnRNNDescriptor_t* rnnDesc);
+prnnStatus_t  prnnCreateRNNDescriptor(prnnRNNDescriptor_t* rnnDesc);
 prnnStatus_t prnnDestroyRNNDescriptor(prnnRNNDescriptor_t rnnDesc);
 
 prnnStatus_t prnnSetRNNDescriptor(prnnRNNDescriptor_t rnnDesc,

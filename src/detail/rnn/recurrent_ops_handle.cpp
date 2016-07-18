@@ -160,7 +160,7 @@ static bool isPersistentBackendSupported(const RecurrentOpsHandle& handle,
             (precision == matrix::SinglePrecision() || precision == matrix::HalfPrecision());
 }
 
-static bool isCudnnBackendSupported(const RecurrentOpsHandle& handle,
+bool isCudnnBackendSupported(const RecurrentOpsHandle& handle,
     const matrix::Precision& precision)
 {
     return matrix::CudnnLibrary::isSupported() &&
