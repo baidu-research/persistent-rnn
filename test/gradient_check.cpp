@@ -1384,6 +1384,7 @@ int main(int argc, char** argv)
     options.epsilon       = 1.0e-3;
     options.inputType     = prnn::RECURRENT_SKIP_INPUT;
     options.layerType     = prnn::RECURRENT_SIMPLE_TYPE;
+    options.direction     = prnn::RECURRENT_FORWARD;
 
     options.gradientCheckSamples = 8;
 
