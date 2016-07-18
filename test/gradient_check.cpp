@@ -1050,14 +1050,16 @@ void TestCGradientOps(const Options& options)
 
     auto inputActivations = rand({options.layerSize, options.miniBatchSize, options.timesteps},
         precision);
-    auto deltas = rand({options.layerSize, options.miniBatchSize, options.timesteps},
+    auto outputActivations = rand({options.layerSize, options.miniBatchSize, options.timesteps},
         precision);
     auto highLevelReserve = prnn::createReserveRecurrent(highLevelHandle, precision);
 
+    rand(highLevelReserve);
+
     auto referenceDWeights = copy(dWeights);
 
-    backPropGradientsRecurrent(referenceDWeights, inputActivations, deltas, highLevelReserve,
-        highLevelHandle);
+    backPropGradientsRecurrent(referenceDWeights, inputActivations, outputActivations,
+        highLevelReserve, highLevelHandle);
 
     prnnHandle_t handle;
 
@@ -1099,14 +1101,14 @@ void TestCGradientOps(const Options& options)
                                                 inputStrides));
     }
 
-    std::vector<prnnTensorDescriptor_t> deltasDescriptors;
+    std::vector<prnnTensorDescriptor_t> outputActivationsDescriptors;
 
     for(size_t i = 0; i < options.timesteps; ++i)
     {
-        deltasDescriptors.push_back(nullptr);
+        outputActivationsDescriptors.push_back(nullptr);
 
-        assertSuccess(prnnCreateTensorDescriptor(&deltasDescriptors.back()));
-        assertSuccess(prnnSetTensorNdDescriptor(deltasDescriptors.back(),
+        assertSuccess(prnnCreateTensorDescriptor(&outputActivationsDescriptors.back()));
+        assertSuccess(prnnSetTensorNdDescriptor(outputActivationsDescriptors.back(),
                                                 PRNN_DATA_FLOAT,
                                                 3,
                                                 inputDimensions,
@@ -1140,6 +1142,10 @@ void TestCGradientOps(const Options& options)
     prnn::matrix::Matrix workspace({workspaceSize / precision.size()}, precision);
     prnn::matrix::Matrix reserve({reserveSize / precision.size()}, precision);
 
+    assertEqual(reserve.size().product(), highLevelReserve.size().product());
+
+    copy(reserve, highLevelReserve);
+
     prnnTensorDescriptor_t dWeightsDescriptor;
 
     assertSuccess(prnnCreateTensorDescriptor(&dWeightsDescriptor));
@@ -1161,8 +1167,8 @@ void TestCGradientOps(const Options& options)
                                          inputActivations.data(),
                                          nullptr,
                                          nullptr,
-                                         deltasDescriptors.data(),
-                                         deltas.data(),
+                                         outputActivationsDescriptors.data(),
+                                         outputActivations.data(),
                                          workspace.data(),
                                          workspaceSize,
                                          dWeightsDescriptor,
@@ -1177,9 +1183,9 @@ void TestCGradientOps(const Options& options)
         assertSuccess(prnnDestroyTensorDescriptor(inputDescriptor));
     }
 
-    for(auto& deltasDescriptor : deltasDescriptors)
+    for(auto& outputActivationDescriptor : outputActivationsDescriptors)
     {
-        assertSuccess(prnnDestroyTensorDescriptor(deltasDescriptor));
+        assertSuccess(prnnDestroyTensorDescriptor(outputActivationDescriptor));
     }
 
     assertSuccess(prnnDestroyTensorDescriptor(dWeightsDescriptor));

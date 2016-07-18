@@ -84,7 +84,7 @@ void backPropDeltasRecurrent(matrix::Matrix& deltas,
 
 void backPropGradientsRecurrent(matrix::Matrix& dWeights,
     const matrix::Matrix& activations,
-    const matrix::Matrix& deltas,
+    const matrix::Matrix& outputActivations,
     const matrix::Matrix& reserve,
     const RecurrentOpsHandle& handle)
 {
@@ -93,7 +93,7 @@ void backPropGradientsRecurrent(matrix::Matrix& dWeights,
 
     prnn::rnn::backPropGradientsRecurrent(matrix::DynamicView(dWeights),
         matrix::ConstDynamicView(activations),
-        matrix::ConstDynamicView(deltas),
+        matrix::ConstDynamicView(outputActivations),
         matrix::DynamicView(scratch),
         matrix::ConstDynamicView(reserve),
         handle);
