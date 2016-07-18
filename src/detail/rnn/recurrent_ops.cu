@@ -146,7 +146,8 @@ public:
 
         util::log("RecurrentOperations") << "major " << streamingMultiprocessorVersionMajor
             << ", minor " << streamingMultiprocessorVersionMinor << ", sms "
-            << streamingMultiprocessorCount << ", scratch size is " << maxSize << "\n";
+            << streamingMultiprocessorCount << ", scratch size per timestep is "
+            << maxSize << "\n";
 
         return maxSize;
     }
@@ -227,7 +228,7 @@ void dispatchForwardPropRecurrent(typename ArchitectureConfig::RealType* activat
     util::log("RecurrentOperations") << "Launch forward propagation with "
         << archParameters.block_count() << " blocks ("
         << archParameters.threads().x << " x " << archParameters.threads().y
-        << " threads), each handling "
+        << " threads, in stream " << archParameters.handle.stream << "), each handling "
         << archParameters.activations_per_block() << " activations out of "
         << activationCount << " total, mini batch size " << miniBatchSize << ", timesteps "
         << timesteps << ".\n";

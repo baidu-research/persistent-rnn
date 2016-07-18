@@ -17,11 +17,11 @@
 
 #if DEBUG_RECURRENT_OPS
 
-#define dprintf(...) do { if( blockIdx.x == 0 && blockIdx.y == 0 ) \
+#define dprintf(...) do { if( blockIdx.x == 0  ) \
     { std::printf(__VA_ARGS__); } } while(0)
 
 #define t0printf(...) do { if(threadIdx.x == 0 && (threadIdx.y == 0) && \
-    blockIdx.x == 0 && blockIdx.y == 0) { std::printf(__VA_ARGS__); } } while(0)
+    blockIdx.x == 0 ) { std::printf(__VA_ARGS__); } } while(0)
 
 #define UNROLL
 
@@ -1242,7 +1242,7 @@ private:
     __device__ void predicated_load_back_prop_activation_vector(RegisterState& register_state,
         RealType& value, index_t value_offset)
     {
-        index_t  block_offset = get_block_id_y() * Config::EXPANDED_BLOCK_TILE_COLUMNS;
+        index_t  block_offset = get_block_id_y() * Config::BLOCK_TILE_COLUMNS;
         index_t thread_offset = get_thread_id_in_load_group() *
             Config::USEFUL_GLOBAL_VALUES_PER_THREAD;
 
@@ -1569,7 +1569,8 @@ private:
         index_t offset = value_offset +
             Config::GLOBAL_VALUES_PER_THREAD * get_thread_id_in_load_group();
 
-        bool result = is_barrier_id(offset) ? value >= register_state.reduction_threads_per_value : true;
+        bool result = is_barrier_id(offset) ?
+            value >= register_state.reduction_threads_per_value : true;
 
         if (is_barrier_id(offset)) {
             dprintf("Thread (%d, %d, %d, %d) - Checking barrier counter %f against "

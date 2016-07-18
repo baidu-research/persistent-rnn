@@ -51,8 +51,6 @@ void forwardPropRecurrent(matrix::Matrix& activations,
 {
     auto scratch = prnn::rnn::getForwardPropScratch(handle, activations.precision());
 
-    zeros(scratch);
-
     prnn::rnn::forwardPropRecurrent(matrix::DynamicView(activations),
         matrix::ConstDynamicView(copy(activations)),
         matrix::ConstDynamicView(weights),
@@ -70,8 +68,6 @@ void backPropDeltasRecurrent(matrix::Matrix& deltas,
     auto activations = activationsData;
 
     auto scratch = prnn::rnn::getBackPropDeltasScratch(handle, activations.precision());
-
-    zeros(scratch);
 
     prnn::rnn::backPropDeltasRecurrent(matrix::DynamicView(deltas),
         matrix::ConstDynamicView(weights),
