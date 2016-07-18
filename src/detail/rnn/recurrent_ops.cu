@@ -480,13 +480,15 @@ void forwardPropRecurrent(
 
         copy(activations, inputActivations);
 
-        detail::forwardPropRecurrentOverActivationFunctions(activations, weights, scratch, handle);
+        detail::forwardPropRecurrentOverActivationFunctions(activations,
+            reshape(weights, {handle.layerSize, handle.layerSize}), scratch, handle);
     }
     else
     {
         copy(activations, inputActivations);
 
-        detail::genericForwardPropRecurrent(activations, weights, handle);
+        detail::genericForwardPropRecurrent(activations,
+            reshape(weights, {handle.layerSize, handle.layerSize}), handle);
     }
 }
 
@@ -763,7 +765,8 @@ void backPropDeltasRecurrent(const matrix::DynamicView& inputDeltas,
 
         copy(inputDeltas, outputDeltas);
 
-        detail::backPropDeltasRecurrentOverActivationFunctions(inputDeltas, weights,
+        detail::backPropDeltasRecurrentOverActivationFunctions(inputDeltas,
+            reshape(weights, {handle.layerSize, handle.layerSize}),
             outputActivations, scratch, handle);
 
         copy(reserve, inputDeltas);
@@ -772,7 +775,8 @@ void backPropDeltasRecurrent(const matrix::DynamicView& inputDeltas,
     {
         copy(inputDeltas, outputDeltas);
 
-        detail::genericBackPropDeltasRecurrent(inputDeltas, weights, outputActivations, handle);
+        detail::genericBackPropDeltasRecurrent(inputDeltas,
+            reshape(weights, {handle.layerSize, handle.layerSize}), outputActivations, handle);
 
         copy(reserve, inputDeltas);
     }
