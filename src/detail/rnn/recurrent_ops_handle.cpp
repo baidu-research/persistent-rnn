@@ -150,11 +150,11 @@ static bool isPersistentBackendSupported(const RecurrentOpsHandle& handle,
     const matrix::Precision& precision)
 {
     return parallel::isCudaEnabled() &&
-            handle.direction == RECURRENT_FORWARD &&
-            handle.layers == 1 &&
+            handle.direction == RECURRENT_FORWARD && // TODO
+            handle.layers == 1 && // TODO
             handle.miniBatchSize >= 3 &&
             handle.layerType == RECURRENT_SIMPLE_TYPE &&
-            handle.inputMode == RECURRENT_SKIP_INPUT &&
+            handle.inputMode == RECURRENT_SKIP_INPUT && // TODO
             handle.layerSize % 4 == 0 &&
             handle.layerSize <= rnn::getMaximumSizeRNNForThisGPU(precision) &&
             (precision == matrix::SinglePrecision() || precision == matrix::HalfPrecision());
@@ -163,37 +163,59 @@ static bool isPersistentBackendSupported(const RecurrentOpsHandle& handle,
 static bool isCudnnBackendSupported(const RecurrentOpsHandle& handle,
     const matrix::Precision& precision)
 {
-    return matrix::CudnnLibrary::isSupported() && handle.direction != RECURRENT_REVERSE;
+    return matrix::CudnnLibrary::isSupported() &&
+        handle.direction != RECURRENT_REVERSE &&
+        handle.direction != RECURRENT_BIDIRECTIONAL && // test this
+        handle.skipConnectionScale == 0.0;
+}
+
+static bool isGenericBackendSupported(const RecurrentOpsHandle& handle,
+    const matrix::Precision& precision)
+{
+    return handle.direction != RECURRENT_BIDIRECTIONAL &&
+        handle.layers == 1 && // TODO
+        handle.layerType == RECURRENT_SIMPLE_TYPE && // TODO
+        handle.inputMode == RECURRENT_SKIP_INPUT && // TODO
+        handle.skipConnectionScale == 0.0; // TODO
 }
 
 RecurrentLayerBackend getBackend(const RecurrentOpsHandle& handle,
     const matrix::Precision& precision)
 {
+    auto result = handle.backend;
+
     if(handle.backend == RECURRENT_BEST_BACKEND)
     {
         if(isPersistentBackendSupported(handle, precision))
         {
-            return RECURRENT_PERSISTENT_BACKEND;
+            result = RECURRENT_PERSISTENT_BACKEND;
         }
         else if(isCudnnBackendSupported(handle, precision))
         {
-            return RECURRENT_CUDNN_BACKEND;
+            result = RECURRENT_CUDNN_BACKEND;
         }
-
-        return RECURRENT_GENERIC_BACKEND;
+        else
+        {
+            result = RECURRENT_GENERIC_BACKEND;
+        }
     }
 
-    if(handle.backend == RECURRENT_CUDNN_BACKEND && !isCudnnBackendSupported(handle, precision))
+    if(result == RECURRENT_CUDNN_BACKEND && !isCudnnBackendSupported(handle, precision))
     {
         throw NotSupported();
     }
-    else if(handle.backend == RECURRENT_PERSISTENT_BACKEND &&
+    else if(result == RECURRENT_PERSISTENT_BACKEND &&
         !isPersistentBackendSupported(handle, precision))
     {
         throw NotSupported();
     }
+    else if(result == RECURRENT_GENERIC_BACKEND &&
+        !isGenericBackendSupported(handle, precision))
+    {
+        throw NotSupported();
+    }
 
-    return handle.backend;
+    return result;
 }
 
 std::string RecurrentOpsHandle::toString() const
