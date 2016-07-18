@@ -144,6 +144,10 @@ public:
                 float, 1, 0>::TileSize::EXPANDED_LAYER_SIZE;
         }
 
+        util::log("RecurrentOperations") << "major " << streamingMultiprocessorVersionMajor
+            << ", minor " << streamingMultiprocessorVersionMinor << ", sms "
+            << streamingMultiprocessorCount << ", scratch size is " << maxSize << "\n";
+
         return maxSize;
     }
 
