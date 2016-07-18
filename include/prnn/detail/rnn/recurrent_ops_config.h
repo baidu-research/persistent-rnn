@@ -26,6 +26,11 @@ __device__ constexpr index_t get_max(index_t l, index_t r)
     return l < r ? r : l;
 }
 
+__device__ constexpr index_t get_min(index_t left, index_t right)
+{
+    return left < right ? left : right;
+}
+
 template<
     index_t StreamingMultiprocessors = 24,
     index_t GridTileRows = 1088,
@@ -105,7 +110,7 @@ public:
 
     enum {
         MAXIMUM_LAYER_SIZE = get_min(GRID_TILE_ROWS, GRID_TILE_COLUMNS),
-        EXPANDED_LAYER_SIZE = get_max(EXPANDED_GRID_TILE_ROWS, EXPANDED_GRID_TILE_COLUMNS)
+        EXPANDED_LAYER_SIZE = get_min(EXPANDED_GRID_TILE_ROWS, EXPANDED_GRID_TILE_COLUMNS)
     };
 
     enum {
@@ -125,11 +130,6 @@ __device__ constexpr index_t get_next_power_of_two(
             ? value
             : get_next_power_of_two( ((value-1) | ((value-1)>>curb))+1, maxb, curb << 1 )
             ;
-}
-
-__device__ constexpr index_t get_min(index_t left, index_t right)
-{
-    return left < right ? left : right;
 }
 
 __device__ constexpr index_t get_log2(index_t n, index_t p = 0)
