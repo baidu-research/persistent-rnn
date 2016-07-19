@@ -66,7 +66,7 @@ public:
 };
 
 template<typename ResultPrecision, typename InputPrecision>
-void copy(Matrix& result, const Matrix& input)
+void copy(DynamicView& result, const ConstDynamicView& input)
 {
     typedef typename ResultPrecision::type NativeResultType;
     typedef typename InputPrecision::type  NativeInputType;
@@ -75,8 +75,8 @@ void copy(Matrix& result, const Matrix& input)
 
     if(result.isContiguous() && input.isContiguous())
     {
-        auto rawResult = static_cast<NativeResultType*>(result.data());
-        auto rawInput  = static_cast<const NativeInputType*>(input.data());
+        auto rawResult = result.data<NativeResultType>();
+        auto rawInput  = input.data<const NativeInputType>();
 
         auto lambda = CopyLambda<NativeResultType, NativeInputType>
             {rawResult, rawInput, elements};
@@ -96,7 +96,7 @@ void copy(Matrix& result, const Matrix& input)
 }
 
 template<typename ResultPrecision, typename T>
-void copyOverInputPrecisions(Matrix& result, const Matrix& input,
+void copyOverInputPrecisions(DynamicView& result, const ConstDynamicView& input,
     const std::tuple<T>& inputPrecisions)
 {
     typedef T PossibleInputPrecision;
@@ -107,7 +107,7 @@ void copyOverInputPrecisions(Matrix& result, const Matrix& input,
 }
 
 template<typename ResultPrecision, typename InputPrecisions>
-void copyOverInputPrecisions(Matrix& result, const Matrix& input,
+void copyOverInputPrecisions(DynamicView& result, const ConstDynamicView& input,
     const InputPrecisions& inputPrecisions)
 {
     typedef typename std::tuple_element<0, InputPrecisions>::type PossibleInputPrecision;
@@ -126,8 +126,8 @@ void copyOverInputPrecisions(Matrix& result, const Matrix& input,
 }
 
 template<typename T, typename InputPrecisions>
-void copyOverPrecisions(Matrix& result, const std::tuple<T>& resultPrecisions,
-    const Matrix& input, const InputPrecisions& inputPrecisions)
+void copyOverPrecisions(DynamicView& result, const std::tuple<T>& resultPrecisions,
+    const ConstDynamicView& input, const InputPrecisions& inputPrecisions)
 {
     typedef T PossibleResultPrecision;
 
@@ -137,8 +137,8 @@ void copyOverPrecisions(Matrix& result, const std::tuple<T>& resultPrecisions,
 }
 
 template<typename ResultPrecisions, typename InputPrecisions>
-void copyOverPrecisions(Matrix& result, const ResultPrecisions& resultPrecisions,
-    const Matrix& input, const InputPrecisions& inputPrecisions)
+void copyOverPrecisions(DynamicView& result, const ResultPrecisions& resultPrecisions,
+    const ConstDynamicView& input, const InputPrecisions& inputPrecisions)
 {
     typedef typename std::tuple_element<0, ResultPrecisions>::type PossibleResultPrecision;
 
@@ -154,18 +154,25 @@ void copyOverPrecisions(Matrix& result, const ResultPrecisions& resultPrecisions
     }
 }
 
-void copyOverPrecisions(Matrix& result, const Matrix& input)
+void copyOverPrecisions(const DynamicView& result, const ConstDynamicView& input)
 {
-    copyOverPrecisions(result, AllPrecisions(), input, AllPrecisions());
+    DynamicView resultView(result);
+
+    copyOverPrecisions(resultView, AllPrecisions(), input, AllPrecisions());
 }
 
+}
+
+void copy(const DynamicView& result, const ConstDynamicView& input)
+{
+    detail::copyOverPrecisions(result, input);
 }
 
 void copy(const Matrix& result, const Matrix& input)
 {
     Matrix temp(result);
 
-    detail::copyOverPrecisions(temp, input);
+    detail::copyOverPrecisions(DynamicView(temp), ConstDynamicView(input));
 }
 
 Matrix copy(const Matrix& input)

@@ -29,22 +29,31 @@ static double getFlopCount(prnn::RecurrentOpsHandle& handle)
 }
 
 void benchmarkRnnForward(size_t iterations, size_t layerSize, size_t miniBatchSize,
-    size_t timesteps, bool usePersistent, const prnn::matrix::Precision& precision) {
+    size_t timesteps, size_t layers, prnn::RecurrentLayerBackend backend,
+    const prnn::matrix::Precision& precision) {
 
-    auto weights     = prnn::matrix::rand({layerSize, layerSize               }, precision);
-    auto activations = prnn::matrix::rand({layerSize, miniBatchSize, timesteps}, precision);
+    auto weights       = prnn::matrix::rand({layerSize, layerSize               }, precision);
+    auto activations   = prnn::matrix::rand({layerSize, miniBatchSize, timesteps}, precision);
+    auto inActivations = prnn::matrix::rand({layerSize, miniBatchSize, timesteps}, precision);
 
-    prnn::RecurrentOpsHandle handle(layerSize, miniBatchSize, timesteps,
+    prnn::RecurrentOpsHandle handle(layerSize, miniBatchSize, timesteps, layers,
         prnn::RecurrentRectifiedLinear(),
         prnn::RECURRENT_FORWARD,
-        usePersistent);
+        prnn::RECURRENT_SIMPLE_TYPE,
+        prnn::RECURRENT_SKIP_INPUT,
+        backend);
 
     auto scratch = prnn::rnn::getForwardPropScratch(handle, precision);
+    auto reserve = prnn::createReserveRecurrent(handle, precision);
 
     // warm up
-    prnn::rnn::forwardPropRecurrent(prnn::matrix::DynamicView(activations),
+    prnn::rnn::forwardPropRecurrent(
+        prnn::matrix::DynamicView(activations),
+        prnn::matrix::ConstDynamicView(inActivations),
         prnn::matrix::ConstDynamicView(weights),
-        prnn::matrix::DynamicView(scratch), handle);
+        prnn::matrix::DynamicView(scratch),
+        prnn::matrix::DynamicView(reserve),
+        handle);
     prnn::parallel::synchronize();
 
     prnn::util::Timer timer;
@@ -52,9 +61,13 @@ void benchmarkRnnForward(size_t iterations, size_t layerSize, size_t miniBatchSi
     timer.start();
 
     for (size_t i = 0; i < iterations; ++i) {
-        prnn::rnn::forwardPropRecurrent(prnn::matrix::DynamicView(activations),
+        prnn::rnn::forwardPropRecurrent(
+            prnn::matrix::DynamicView(activations),
+            prnn::matrix::ConstDynamicView(inActivations),
             prnn::matrix::ConstDynamicView(weights),
-            prnn::matrix::DynamicView(scratch), handle);
+            prnn::matrix::DynamicView(scratch),
+            prnn::matrix::DynamicView(reserve),
+            handle);
     }
 
     prnn::parallel::synchronize();
@@ -71,24 +84,34 @@ void benchmarkRnnForward(size_t iterations, size_t layerSize, size_t miniBatchSi
 }
 
 void benchmarkRnnReverse(size_t iterations, size_t layerSize, size_t miniBatchSize,
-    size_t timesteps, bool usePersistent, const prnn::matrix::Precision& precision)
+    size_t timesteps, size_t layers, prnn::RecurrentLayerBackend backend,
+    const prnn::matrix::Precision& precision)
 {
     auto weights     = prnn::matrix::rand({layerSize, layerSize               }, precision);
     auto activations = prnn::matrix::rand({layerSize, miniBatchSize, timesteps}, precision);
     auto deltas      = prnn::matrix::rand({layerSize, miniBatchSize, timesteps}, precision);
+    auto outDeltas   = prnn::matrix::rand({layerSize, miniBatchSize, timesteps}, precision);
 
-    prnn::RecurrentOpsHandle handle(layerSize, miniBatchSize, timesteps,
+    prnn::RecurrentOpsHandle handle(layerSize, miniBatchSize, timesteps, layers,
         prnn::RecurrentRectifiedLinear(),
         prnn::RECURRENT_FORWARD,
-        usePersistent);
+        prnn::RECURRENT_SIMPLE_TYPE,
+        prnn::RECURRENT_SKIP_INPUT,
+        backend);
 
     auto scratch = prnn::rnn::getBackPropDeltasScratch(handle, precision);
+    auto reserve = prnn::createReserveRecurrent(handle, precision);
+
+    prnn::matrix::randn(reserve);
 
     // warm up
     prnn::rnn::backPropDeltasRecurrent(prnn::matrix::DynamicView(deltas),
         prnn::matrix::ConstDynamicView(weights),
-        prnn::matrix::DynamicView(activations),
-        prnn::matrix::DynamicView(scratch), handle);
+        prnn::matrix::ConstDynamicView(activations),
+        prnn::matrix::ConstDynamicView(outDeltas),
+        prnn::matrix::DynamicView(scratch),
+        prnn::matrix::DynamicView(reserve),
+        handle);
     prnn::parallel::synchronize();
 
     prnn::util::Timer timer;
@@ -98,8 +121,10 @@ void benchmarkRnnReverse(size_t iterations, size_t layerSize, size_t miniBatchSi
     for (size_t i = 0; i < iterations; ++i) {
         prnn::rnn::backPropDeltasRecurrent(prnn::matrix::DynamicView(deltas),
             prnn::matrix::ConstDynamicView(weights),
-            prnn::matrix::DynamicView(activations),
-            prnn::matrix::DynamicView(scratch), handle);
+            prnn::matrix::ConstDynamicView(activations),
+            prnn::matrix::ConstDynamicView(outDeltas),
+            prnn::matrix::DynamicView(scratch),
+            prnn::matrix::DynamicView(reserve), handle);
     }
 
     prnn::parallel::synchronize();
@@ -116,25 +141,33 @@ void benchmarkRnnReverse(size_t iterations, size_t layerSize, size_t miniBatchSi
 }
 
 void benchmarkRnnGradients(size_t iterations, size_t layerSize, size_t miniBatchSize,
-    size_t timesteps, bool usePersistent, const prnn::matrix::Precision& precision)
+    size_t timesteps, size_t layers, prnn::RecurrentLayerBackend backend,
+    const prnn::matrix::Precision& precision)
 {
     auto weights     = prnn::matrix::rand({layerSize, layerSize               }, precision);
     auto activations = prnn::matrix::rand({layerSize, miniBatchSize, timesteps}, precision);
     auto deltas      = prnn::matrix::rand({layerSize, miniBatchSize, timesteps}, precision);
 
-    prnn::RecurrentOpsHandle handle(layerSize, miniBatchSize, timesteps,
+    prnn::RecurrentOpsHandle handle(layerSize, miniBatchSize, timesteps, layers,
         prnn::RecurrentRectifiedLinear(),
         prnn::RECURRENT_FORWARD,
-        usePersistent);
+        prnn::RECURRENT_SIMPLE_TYPE,
+        prnn::RECURRENT_SKIP_INPUT,
+        backend);
 
     auto scratch = prnn::rnn::getBackPropGradientsScratch(handle, precision);
+    auto reserve = prnn::createReserveRecurrent(handle, precision);
+
+    prnn::matrix::randn(reserve);
 
     // warm up
     prnn::rnn::backPropGradientsRecurrent(
         prnn::matrix::DynamicView(weights),
         prnn::matrix::ConstDynamicView(activations),
         prnn::matrix::ConstDynamicView(deltas),
-        prnn::matrix::DynamicView(scratch), handle);
+        prnn::matrix::DynamicView(scratch),
+        prnn::matrix::DynamicView(reserve),
+        handle);
     prnn::parallel::synchronize();
 
     prnn::util::Timer timer;
@@ -146,7 +179,9 @@ void benchmarkRnnGradients(size_t iterations, size_t layerSize, size_t miniBatch
             prnn::matrix::DynamicView(weights),
             prnn::matrix::ConstDynamicView(activations),
             prnn::matrix::ConstDynamicView(deltas),
-            prnn::matrix::DynamicView(scratch), handle);
+            prnn::matrix::DynamicView(scratch),
+            prnn::matrix::DynamicView(reserve),
+            handle);
     }
 
     prnn::parallel::synchronize();
@@ -164,11 +199,30 @@ void benchmarkRnnGradients(size_t iterations, size_t layerSize, size_t miniBatch
 }
 
 void runBenchmark(size_t iterations, size_t layerSize, size_t miniBatchSize,
-    size_t timesteps, bool usePersistent, prnn::matrix::Precision& precision)
+    size_t timesteps, size_t layers, prnn::RecurrentLayerBackend backend,
+    prnn::matrix::Precision& precision)
 {
-    benchmarkRnnForward(  iterations, layerSize, miniBatchSize, timesteps, usePersistent, precision);
-    benchmarkRnnReverse(  iterations, layerSize, miniBatchSize, timesteps, usePersistent, precision);
-    benchmarkRnnGradients(iterations, layerSize, miniBatchSize, timesteps, usePersistent, precision);
+    benchmarkRnnForward(  iterations, layerSize, miniBatchSize, timesteps, layers, backend, precision);
+    benchmarkRnnReverse(  iterations, layerSize, miniBatchSize, timesteps, layers, backend, precision);
+    benchmarkRnnGradients(iterations, layerSize, miniBatchSize, timesteps, layers, backend, precision);
+}
+
+prnn::RecurrentLayerBackend getBackend(const std::string& backend)
+{
+    if(backend == "persistent")
+    {
+        return prnn::RECURRENT_PERSISTENT_BACKEND;
+    }
+    else if(backend == "cudnn")
+    {
+        return prnn::RECURRENT_CUDNN_BACKEND;
+    }
+    else if(backend == "best")
+    {
+        return prnn::RECURRENT_BEST_BACKEND;
+    }
+
+    throw std::runtime_error("Invalid backend " + backend);
 }
 
 int main(int argc, char** argv) {
@@ -181,19 +235,23 @@ int main(int argc, char** argv) {
     size_t layerSize      = prnn::rnn::getMaximumSizeRNNForThisGPU(precision);
     size_t miniBatcheSize = 2;
     size_t timesteps      = 64;
-    bool   usePersistent  = true;
+    size_t layers         = 1;
+
+    std::string backend;
 
     parser.parse("-i", "--iterations",      iterations,     iterations,     "Iterations to run each recurrent operation.");
     parser.parse("-l", "--layer-size",      layerSize,      layerSize,      "The size of the recurrent layer.");
     parser.parse("-b", "--mini-batch-size", miniBatcheSize, miniBatcheSize, "The number of utterances per mini-batch.");
     parser.parse("-t", "--timesteps",       timesteps,      timesteps,      "The length of each utterance.");
-    parser.parse("-p", "--no-peristent",    usePersistent,  usePersistent,  "Disable use of persistent kernels.");
+    parser.parse("-l", "--layers",          layers,         layers,         "The number of recurrent layers to stack.");
+    parser.parse("-b", "--backend",         backend,        backend,        "The backend to use (persistent, cudnn, best).");
 
     parser.parse();
 
     prnn::util::enable_log("RecurrentOperations::Detail");
 
-    runBenchmark(iterations, layerSize, miniBatcheSize, timesteps, usePersistent, precision);
+    runBenchmark(iterations, layerSize, miniBatcheSize, timesteps, layers,
+        getBackend(backend), precision);
 }
 
 

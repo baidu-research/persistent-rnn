@@ -14,6 +14,7 @@
 #define REDUCE_ACCUMULATORS 1
 #define REDUCE_ADDRESS_MATH 1
 #define BARRIER_ALWAYS_FAILS 0
+#define WAIT_FOREVER 0
 
 #if DEBUG_RECURRENT_OPS
 
@@ -21,7 +22,7 @@
     { std::printf(__VA_ARGS__); } } while(0)
 
 #define t0printf(...) do { if(threadIdx.x == 0 && (threadIdx.y == 0) && \
-    blockIdx.x == 0 && blockIdx.y == 0) { std::printf(__VA_ARGS__); } } while(0)
+    blockIdx.x == 0 && blockIdx.y == 0 ) { std::printf(__VA_ARGS__); } } while(0)
 
 #define UNROLL
 
@@ -1138,7 +1139,11 @@ private:
         DataLoadingBuffer& data_buffer)
     {
         #if USE_BARRIER
+        #if WAIT_FOREVER
+        for(index_t i = 0; true; ++i)
+        #else
         for(index_t i = 0; i < Config::BARRIER_WAIT_COUNT; ++i)
+        #endif
         {
             external_load_input(register_state, shared_state, data_buffer);
 
@@ -1242,7 +1247,7 @@ private:
     __device__ void predicated_load_back_prop_activation_vector(RegisterState& register_state,
         RealType& value, index_t value_offset)
     {
-        index_t  block_offset = get_block_id_y() * Config::EXPANDED_BLOCK_TILE_COLUMNS;
+        index_t  block_offset = get_block_id_y() * Config::BLOCK_TILE_COLUMNS;
         index_t thread_offset = get_thread_id_in_load_group() *
             Config::USEFUL_GLOBAL_VALUES_PER_THREAD;
 
@@ -1569,7 +1574,8 @@ private:
         index_t offset = value_offset +
             Config::GLOBAL_VALUES_PER_THREAD * get_thread_id_in_load_group();
 
-        bool result = is_barrier_id(offset) ? value >= register_state.reduction_threads_per_value : true;
+        bool result = is_barrier_id(offset) ?
+            value >= register_state.reduction_threads_per_value : true;
 
         if (is_barrier_id(offset)) {
             dprintf("Thread (%d, %d, %d, %d) - Checking barrier counter %f against "
@@ -1775,15 +1781,14 @@ private:
         index_t threadId = 2 * getLinearThreadId();
 
         index_t threadOffset = threadId;
-
-        index_t offset = blockOffset + threadOffset;
         #else
         RealType* outputBuffer = register_state.activation_scratch;
-        index_t offset = 0;
+        index_t threadOffset = 0;
+        index_t blockOffset = 0;
         index_t bufferOffset;
         #endif
 
-        atomic_increment(outputBuffer, register_state, accumulators, offset, bufferOffset);
+        atomic_increment(outputBuffer, register_state, accumulators, blockOffset, threadOffset, bufferOffset);
     }
 
     __device__ void store_accumulators_back_prop(RegisterState& register_state,
@@ -1802,30 +1807,29 @@ private:
         index_t threadId = 2 * getLinearThreadId();
 
         index_t threadOffset = threadId;
-
-        index_t offset = blockOffset + threadOffset;
         #else
         RealType* outputBuffer = register_state.activation_scratch;
-        index_t offset = 0;
+        index_t threadOffset = 0;
+        index_t blockOffset = 0;
         index_t bufferOffset = 0;
         #endif
 
-        atomic_increment(outputBuffer, register_state, accumulators, offset, bufferOffset);
+        atomic_increment(outputBuffer, register_state, accumulators, blockOffset, threadOffset, bufferOffset);
     }
 
     __device__ void atomic_increment(RealType* output_pointer,
         RegisterState& register_state,
-        ThreadTileOutputAccumulators& accumulators, index_t threadOffset, index_t bufferOffset) {
+        ThreadTileOutputAccumulators& accumulators, index_t blockOffset, index_t threadOffset, index_t bufferOffset) {
 
         #if ATOMIC_INCREMENT
         UNROLL
         for (index_t row = 0; row < Config::OUTPUTS_PER_THREAD; row += 1)
         {
             index_t offsetInLayer = threadOffset + row * 2 * Config::THREADS_PER_BLOCK;
+            index_t offset = offsetInLayer + blockOffset + bufferOffset;
 
-            bool condition = offsetInLayer < register_state.expanded_layer_size;
-
-            index_t offset = offsetInLayer + bufferOffset;
+            bool condition = (offsetInLayer + blockOffset) < register_state.expanded_layer_size &&
+                offsetInLayer < Config::EXPANDED_BLOCK_TILE_ROWS;
 
             #if DEBUG_RECURRENT_OPS
             if(condition)

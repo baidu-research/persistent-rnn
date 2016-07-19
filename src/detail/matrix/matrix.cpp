@@ -144,13 +144,11 @@ std::shared_ptr<Allocation> Matrix::allocation()
 
 void* Matrix::data()
 {
-    parallel::synchronize();
     return _data_begin;
 }
 
 const void* Matrix::data() const
 {
-    parallel::synchronize();
     return _data_begin;
 }
 

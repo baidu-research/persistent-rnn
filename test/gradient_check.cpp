@@ -22,15 +22,30 @@
 #include <random>
 #include <iostream>
 
+static prnn::RecurrentLayerBackend getBackend(const std::string& backend)
+{
+    if(backend == "persistent")
+    {
+        return prnn::RECURRENT_PERSISTENT_BACKEND;
+    }
+    else if(backend == "cudnn")
+    {
+        return prnn::RECURRENT_CUDNN_BACKEND;
+    }
+
+    return prnn::RECURRENT_BEST_BACKEND;
+}
+
 class Options
 {
 public:
-    Options() : failed(false) { }
+    Options() : failed(false), allowNotSupported(false) { }
 
 public:
     size_t layerSize;
     size_t miniBatchSize;
     size_t timesteps;
+    size_t layers;
 
 public:
     size_t gradientCheckSamples;
@@ -40,13 +55,14 @@ public:
 
 public:
     prnn::RecurrentLayerDirection direction;
+    prnn::RecurrentLayerType      layerType;
+    prnn::RecurrentLayerInputMode inputType;
+
+public:
+    std::string backend;
 
 public:
     std::string specificSample;
-
-public:
-    bool usePersistentBackProp;
-    bool usePersistentForwardProp;
 
 public:
     double skipConnectionScale;
@@ -56,42 +72,104 @@ public:
 
 public:
     bool failed;
+    bool allowNotSupported;
     bool haltOnFailure;
+
+public:
+    bool runSweep;
+
+public:
+    std::string toString() const
+    {
+        return prnn::RecurrentOpsHandle(layerSize,
+            miniBatchSize,
+            timesteps,
+            layers,
+            prnn::RecurrentRectifiedLinear(),
+            direction,
+            layerType,
+            inputType,
+            getBackend(backend),
+            0.0).toString();
+    }
 
 };
 
-size_t parseSamplePosition(const std::string& position, size_t rows, size_t columns)
+static prnnBackend_t getBackend(const prnn::RecurrentOpsHandle& handle)
 {
-    size_t row = 0;
-    size_t column = 0;
-
-    auto coordinates = prnn::util::split(position, ",");
-
-    if(coordinates.size() > 0)
+    if(handle.backend == prnn::RECURRENT_PERSISTENT_BACKEND)
     {
-        std::stringstream stream;
-
-        stream << prnn::util::removeWhitespace(coordinates[0]);
-
-        stream >> row;
-
-        row = row % rows;
+        return PRNN_PERSISTENT_BACKEND;
     }
-
-    if(coordinates.size() > 1)
+    else if(handle.backend == prnn::RECURRENT_CUDNN_BACKEND)
     {
-        std::stringstream stream;
-
-        stream << prnn::util::removeWhitespace(coordinates[1]);
-
-        stream >> column;
-
-        columns = column % columns;
+        return PRNN_CUDNN_BACKEND;
     }
-
-    return row + column * rows;
+    else
+    {
+        return PRNN_BEST_BACKEND;
+    }
 }
 
+static prnnRNNInputMode_t getInputType(const prnn::RecurrentLayerInputMode mode)
+{
+    if(mode == prnn::RECURRENT_LINEAR_INPUT)
+    {
+        return PRNN_LINEAR_INPUT;
+    }
+    else
+    {
+        return PRNN_SKIP_INPUT;
+    }
+}
+
+static prnnRNNMode_t getLayerType(const prnn::RecurrentLayerType mode)
+{
+    if(mode == prnn::RECURRENT_SIMPLE_TYPE)
+    {
+        return PRNN_RNN_RELU;
+    }
+    else if(mode == prnn::RECURRENT_GRU_TYPE)
+    {
+        return PRNN_GRU;
+    }
+    else
+    {
+        return PRNN_LSTM;
+    }
+}
+
+static prnnDirectionMode_t getDirection(const prnn::RecurrentLayerDirection direction)
+{
+    if(direction == prnn::RECURRENT_FORWARD)
+    {
+        return PRNN_UNIDIRECTIONAL;
+    }
+    else if(direction == prnn::RECURRENT_BIDIRECTIONAL)
+    {
+        return PRNN_BIDIRECTIONAL;
+    }
+    else
+    {
+        return PRNN_REVERSE;
+    }
+
+}
+
+size_t parseSamplePosition(const std::string& position, size_t totalElements)
+{
+    size_t offset = 0;
+
+    std::stringstream stream;
+
+    stream << prnn::util::removeWhitespace(position);
+
+    stream >> offset;
+
+    offset = offset % totalElements;
+
+    return offset;
+}
 
 void TestSimpleRecurrentOps(const Options& options)
 {
@@ -99,70 +177,78 @@ void TestSimpleRecurrentOps(const Options& options)
 
     prnn::matrix::srand(377);
 
-    size_t layer_size = options.layerSize;
+    size_t layerSize = options.layerSize;
     size_t timesteps  = options.timesteps;
-    size_t mini_batch = options.miniBatchSize;
+    size_t miniBatchSize = options.miniBatchSize;
 
-    prnn::RecurrentOpsHandle handle(layer_size, mini_batch, timesteps,
-        prnn::RecurrentRectifiedLinear(), options.direction);
+    prnn::RecurrentOpsHandle handle(layerSize,
+        miniBatchSize,
+        timesteps,
+        options.layers,
+        prnn::RecurrentRectifiedLinear(),
+        options.direction,
+        options.layerType,
+        options.inputType,
+        getBackend(options.backend));
 
-    auto weights     = ones({layer_size, layer_size}, precision);
-    auto activations = ones({layer_size, mini_batch, timesteps}, precision);
+    auto weights     = createWeightsRecurrent(handle, precision);
+    auto activations = ones({layerSize, miniBatchSize, timesteps}, precision);
+    auto reserve     = createReserveRecurrent(handle, precision);
 
-    forwardPropRecurrent(activations, weights, handle);
+    forwardPropRecurrent(activations, reserve, weights, handle);
 
     auto deltas = ones(activations.size(), precision);
 
-    backPropDeltasRecurrent(deltas, weights, activations, handle);
+    backPropDeltasRecurrent(deltas, weights, activations, reserve, handle);
 
     auto dWeights = ones(weights.size(), precision);
 
-    backPropGradientsRecurrent(dWeights, activations, deltas, handle);
+    backPropGradientsRecurrent(dWeights, activations, deltas, reserve, handle);
 
     // just make sure nothing crashes
 }
 
-void slice_window(prnn::matrix::Matrix& inputs, size_t window_size)
+void sliceWindow(prnn::matrix::Matrix& inputs, size_t windowSize)
 {
-    size_t activation_count = inputs.size()[0];
-    size_t mini_batch_size  = inputs.size()[1];
-    size_t timesteps        = inputs.size()[2];
+    size_t activationCount = inputs.size()[0];
+    size_t miniBatchSize   = inputs.size()[1];
+    size_t timesteps       = inputs.size()[2];
 
-    size_t activation_size = std::min(window_size, activation_count);
+    size_t activationSize = std::min(windowSize, activationCount);
 
     inputs = slice(inputs,
         {0,               0,               0},
-        {activation_size, mini_batch_size, timesteps});
+        {activationSize,  miniBatchSize,   timesteps});
 }
 
-prnn::matrix::Matrix extract_window(prnn::matrix::Matrix inputs, size_t window_size)
+prnn::matrix::Matrix extractWindow(prnn::matrix::Matrix inputs, size_t windowSize)
 {
-    size_t activation_count = inputs.size()[0];
-    size_t mini_batch_size  = inputs.size()[1];
-    size_t timesteps        = inputs.size()[2];
+    size_t activationCount = inputs.size()[0];
+    size_t miniBatchSize   = inputs.size()[1];
+    size_t timesteps       = inputs.size()[2];
 
-    size_t activation_size = std::min(window_size, activation_count);
+    size_t activationSize = std::min(windowSize, activationCount);
 
-    auto sliced_inputs = slice(inputs,
+    auto slicedInputs = slice(inputs,
         {0,               0,               0},
-        {activation_size, mini_batch_size, timesteps});
+        {activationSize,  miniBatchSize,   timesteps});
 
     auto zeros = prnn::matrix::zeros(inputs.size(), inputs.precision());
 
-    auto sliced_zeros = slice(zeros,
-        {0,               0,               0},
-        {activation_size, mini_batch_size, timesteps});
+    auto slicedZeros = slice(zeros,
+        {0,              0,             0},
+        {activationSize, miniBatchSize, timesteps});
 
-    copy(sliced_zeros, sliced_inputs);
+    copy(slicedZeros, slicedInputs);
 
     return zeros;
 }
 
-double compute_cost(prnn::matrix::Matrix activations, prnn::matrix::Matrix reference,
-    size_t window_size)
+double computeCost(prnn::matrix::Matrix activations, prnn::matrix::Matrix reference,
+    size_t windowSize)
 {
-    slice_window(activations, window_size);
-    slice_window(reference,   window_size);
+    sliceWindow(activations, windowSize);
+    sliceWindow(reference,   windowSize);
 
     auto difference = apply(prnn::matrix::Matrix(activations),
         reference, prnn::matrix::Subtract());
@@ -173,16 +259,16 @@ double compute_cost(prnn::matrix::Matrix activations, prnn::matrix::Matrix refer
     return 0.5 * squaredSum / activations.size()[1];
 }
 
-prnn::matrix::Matrix compute_deltas(prnn::matrix::Matrix complete_activations,
-    prnn::matrix::Matrix complete_reference, size_t window_size)
+prnn::matrix::Matrix computeDeltas(prnn::matrix::Matrix completeActivations,
+    prnn::matrix::Matrix completeReference, size_t windowSize)
 {
-    auto activations = extract_window(complete_activations, window_size);
-    auto reference   = extract_window(complete_reference,   window_size);
+    auto activations = extractWindow(completeActivations, windowSize);
+    auto reference   = extractWindow(completeReference,   windowSize);
 
-    size_t mini_batch = activations.size()[1];
+    size_t miniBatchSize = activations.size()[1];
 
     return apply(apply(prnn::matrix::Matrix(activations), reference, prnn::matrix::Subtract()),
-        prnn::matrix::Multiply(1.0 / mini_batch));
+        prnn::matrix::Multiply(1.0 / miniBatchSize));
 }
 
 static void assertLessThanOrEqual(double left, double right)
@@ -258,186 +344,137 @@ void TestSimpleRecurrentOpsGradientCheck(const Options& options)
 {
     auto precision = prnn::matrix::SinglePrecision();
 
-    std::default_random_engine random_engine;
+    std::default_random_engine randomEngine;
 
-    random_engine.seed(377);
+    randomEngine.seed(377);
 
     prnn::matrix::srand(377);
 
-    size_t layer_size = options.layerSize;
-    size_t timesteps  = options.timesteps;
-    size_t mini_batch = options.miniBatchSize;
-    size_t samples    = options.gradientCheckSamples;
+    size_t layerSize     = options.layerSize;
+    size_t timesteps     = options.timesteps;
+    size_t miniBatchSize = options.miniBatchSize;
+    size_t samples       = options.gradientCheckSamples;
 
-    size_t window_rows    = layer_size;
-    size_t window_columns = window_rows;
-    size_t window_outputs = window_rows;
-
-    samples = std::min(window_rows * window_columns, samples);
-
-    prnn::RecurrentOpsHandle handle(layer_size, mini_batch, timesteps,
+    prnn::RecurrentOpsHandle handle(layerSize, miniBatchSize, timesteps, options.layers,
         prnn::RecurrentRectifiedLinear(), options.direction,
-        options.usePersistentForwardProp, options.skipConnectionScale);
+        options.layerType,
+        options.inputType,
+        getBackend(options.backend),
+        options.skipConnectionScale);
 
-    auto weights = zeros({layer_size, layer_size}, precision);
-    auto weights_slice = slice(weights, {0, 0}, {window_rows, window_columns});
+    auto weights = createWeightsRecurrent(handle, precision);
+    rand(weights);
+    apply(weights, weights, prnn::matrix::Multiply(2.0/(timesteps*layerSize)));
 
-    copy(weights_slice, rand({window_rows, window_columns}, precision));
+    samples = std::min(weights.elements(), samples);
 
-    apply(weights, weights, prnn::matrix::Multiply(1.0e-2));
+    auto inputActivations = rand({layerSize, miniBatchSize, timesteps}, precision);
+    auto reserve = createReserveRecurrent(handle, precision);
 
-    auto input_activations = zeros({layer_size, mini_batch, timesteps}, precision);
+    auto referenceActivations = rand({layerSize, miniBatchSize, timesteps}, precision);
 
-    auto reference_activations = zeros({layer_size, mini_batch, timesteps}, precision);
-
-    copy(
-        slice(input_activations,
-                     {0, 0, 0},
-                     {window_outputs, mini_batch, timesteps}),
-        rand({window_outputs, mini_batch, timesteps}, precision));
-
-    copy(
-        slice(reference_activations,
-                    {0, 0, 0},
-                    {window_outputs, mini_batch, timesteps}),
-        rand({window_outputs, mini_batch, timesteps}, precision));
-
-    auto output_activations = copy(input_activations);
+    auto outputActivations = copy(inputActivations);
 
     prnn::util::log("TestRecurrent") << "Input Weights     " << weights.debugString();
-    prnn::util::log("TestRecurrent") << "Input Activations " <<
-        reshape(copy(slice(output_activations,
-                             {0,0,0},
-                             {window_outputs, mini_batch, timesteps})),
-            {window_outputs, mini_batch * timesteps}).debugString();
+    prnn::util::log("TestRecurrent") << "Input Activations " << outputActivations.debugString();
 
-    forwardPropRecurrent(output_activations, weights, handle);
+    forwardPropRecurrent(outputActivations, reserve, weights, handle);
 
-    prnn::util::log("TestRecurrent") << "Output Activations " <<
-        reshape(copy(slice(output_activations,
-                           {0,0,0},
-                           {window_outputs, mini_batch, timesteps})),
-            {window_outputs, mini_batch * timesteps}).debugString();
+    prnn::util::log("TestRecurrent") << "Output Activations " << outputActivations.debugString();
 
-    prnn::util::log("TestRecurrent") << "Reference Activations " <<
-        reshape(copy(slice(reference_activations,
-                           {0,0,0},
-                           {window_outputs, mini_batch, timesteps})),
-            {window_outputs, mini_batch * timesteps}).debugString();
+    prnn::util::log("TestRecurrent") << "Reference Activations "
+        << referenceActivations.debugString();
 
-    double cost = compute_cost  (output_activations, reference_activations, window_outputs);
-    auto deltas = compute_deltas(output_activations, reference_activations, window_outputs);
+    double cost = computeCost  (outputActivations, referenceActivations, layerSize);
+    auto deltas = computeDeltas(outputActivations, referenceActivations, layerSize);
 
-    prnn::util::log("TestRecurrent") << "Input Deltas " <<
-        reshape(copy(slice(deltas,
-                           {0,0,0},
-                           {window_outputs, mini_batch, timesteps})),
-            {window_outputs, mini_batch * timesteps}).debugString();
+    prnn::util::log("TestRecurrent") << "Input Deltas " << deltas.debugString();
 
-    handle.allowPersistentKernels = options.usePersistentBackProp;
+    backPropDeltasRecurrent(deltas, weights, outputActivations, reserve, handle);
 
-    backPropDeltasRecurrent(deltas, weights, output_activations, handle);
+    auto dWeights = zeros(weights.size(), precision);
 
-    auto dWeights = ones(weights.size(), precision);
+    backPropGradientsRecurrent(dWeights, inputActivations, outputActivations, reserve, handle);
 
-    backPropGradientsRecurrent(dWeights, output_activations, deltas, handle);
-
-    handle.allowPersistentKernels = options.usePersistentForwardProp;
-
-    prnn::util::log("TestRecurrent") << "Output Deltas " <<
-        reshape(copy(slice(deltas,
-                           {0,0,0},
-                           {window_outputs, mini_batch, timesteps})),
-            {window_outputs, mini_batch * timesteps}).debugString();
+    prnn::util::log("TestRecurrent") << "Output Deltas " << deltas.debugString();
     prnn::util::log("TestRecurrent") << "dWeights      " << dWeights.debugString();
 
-    size_t gradient_count = window_rows * window_columns;
+    size_t gradientCount = weights.elements();
 
-    std::vector<size_t> sample_positions = {parseSamplePosition(options.specificSample,
-        window_rows, window_columns)};
+    std::vector<size_t> samplePositions = {parseSamplePosition(options.specificSample,
+        gradientCount)};
 
-    while (sample_positions.size() < samples) {
-        sample_positions.push_back(random_engine() % gradient_count);
+    while (samplePositions.size() < samples) {
+        samplePositions.push_back(randomEngine() % gradientCount);
     }
 
-    // grad check over the sample positions
+    // double sided grad check over the sample positions
     double epsilon    = options.epsilon;
     double difference = 0.0;
     double total      = 0.0;
 
-    for (auto& sample_position : sample_positions) {
+    for (auto& samplePosition : samplePositions) {
 
-        size_t sample_row    = sample_position % window_rows;
-        size_t sample_column = sample_position / window_rows;
+        double originalValue = weights(samplePosition);
+        double gradient      = dWeights(samplePosition);
 
-        double original_value = weights (sample_row, sample_column);
-        double gradient       = dWeights(sample_row, sample_column);
+        weights(samplePosition) = originalValue - epsilon;
 
-        weights(sample_row, sample_column) = original_value - epsilon;
+        prnn::util::log("TestRecurrent") << "Updated Input Weight (" << samplePosition
+            << ")     from " << originalValue << " to "
+            << (originalValue - epsilon) << "\n";
 
-        prnn::util::log("TestRecurrent") << "Updated Input Weight (" << sample_row << ", "
-            << sample_column << ")     from " << original_value << " to "
-            << (original_value - epsilon) << "\n";
-
-        auto copied_output_activations = copy(input_activations);
-        forwardPropRecurrent(copied_output_activations, weights, handle);
+        auto copiedOutputActivations = copy(inputActivations);
+        forwardPropRecurrent(copiedOutputActivations, reserve, weights, handle);
 
         prnn::util::log("TestRecurrent") << "Updated Output Activations " <<
-            reshape(copy(slice(copied_output_activations,
-                                     {0,0,0},
-                                     {window_outputs, mini_batch, timesteps})),
-                           {window_outputs, mini_batch * timesteps}).debugString();
+            copiedOutputActivations.debugString();
 
-        double left_cost = compute_cost(copied_output_activations, reference_activations,
-            window_outputs);
+        double leftCost = computeCost(copiedOutputActivations, referenceActivations,
+            layerSize);
 
-        weights(sample_row, sample_column) = original_value + epsilon;
+        weights(samplePosition) = originalValue + epsilon;
 
-        prnn::util::log("TestRecurrent") << "Updated Input Weight (" << sample_row << ", "
-            << sample_column << ")     from " << original_value << " to "
-            << (original_value + epsilon) << "\n";
+        prnn::util::log("TestRecurrent") << "Updated Input Weight (" << samplePosition
+            << ")     from " << originalValue << " to "
+            << (originalValue + epsilon) << "\n";
 
-        copied_output_activations = copy(input_activations);
+        copiedOutputActivations = copy(inputActivations);
 
-        forwardPropRecurrent(copied_output_activations, weights, handle);
+        forwardPropRecurrent(copiedOutputActivations, reserve, weights, handle);
         prnn::util::log("TestRecurrent") << "Updated Output Activations " <<
-            reshape(copy(slice(copied_output_activations,
-                               {0,0,0},
-                               {window_outputs, mini_batch, timesteps})),
-                   {window_outputs, mini_batch * timesteps}).debugString();
+            copiedOutputActivations.debugString();
 
-        double right_cost = compute_cost(copied_output_activations, reference_activations,
-            window_outputs);
+        double rightCost = computeCost(copiedOutputActivations, referenceActivations,
+            layerSize);
 
-        weights(sample_row, sample_column) = original_value;
+        weights(samplePosition) = originalValue;
 
-        double numerical_gradient = (right_cost - left_cost) / (2.0 * epsilon);
-        double local_difference = numerical_gradient - gradient;
+        double numericalGradient = (rightCost - leftCost) / (2.0 * epsilon);
+        double localDifference = numericalGradient - gradient;
 
-        difference += std::pow(local_difference, 2.0);
+        difference += std::pow(localDifference, 2.0);
 
-        double absolute_difference = (local_difference == 0 || gradient == 0) ?
-            0.0 : std::abs(local_difference) / std::abs(gradient);
+        double absoluteDifference = (localDifference == 0 || gradient == 0) ?
+            0.0 : std::abs(localDifference) / std::abs(gradient);
 
         total += std::pow(gradient, 2.0);
 
-        double scaled_difference = (total == 0.0) ? difference : (difference / total);
+        double scaledDifference = (total == 0.0) ? difference : (difference / total);
 
-        if (absolute_difference > 1e-3 || !std::isfinite(local_difference))
+        if (absoluteDifference > 1e-3 || !std::isfinite(localDifference))
         {
-            prnn::util::log("TestRecurrent") << "For weight (" << sample_row << ", "
-                << sample_column
+            prnn::util::log("TestRecurrent") << "For weight (" << samplePosition
                 << ") computed gradient " << gradient << " does not match estimated gradient "
-                << numerical_gradient << ", cost " << cost << " left cost "
-                << left_cost << ", right cost " << right_cost <<  ", " << local_difference
-                << " difference, " << scaled_difference<< " scaled difference\n";
+                << numericalGradient << ", cost " << cost << " left cost "
+                << leftCost << ", right cost " << rightCost <<  ", " << localDifference
+                << " difference, " << scaledDifference<< " scaled difference\n";
         }
         else
         {
-            prnn::util::log("TestRecurrent") << "For weight (" << sample_row << ", "
-                << sample_column
+            prnn::util::log("TestRecurrent") << "For weight (" << samplePosition
                 << ") computed gradient " << gradient << " matches estimated gradient "
-                << numerical_gradient << "\n";
+                << numericalGradient << "\n";
         }
     }
 
@@ -467,6 +504,11 @@ void TestReverseRecurrentOpsGradientCheck(const Options& options)
 
 static void assertSuccess(prnnStatus_t status)
 {
+    if(status == PRNN_STATUS_NOT_SUPPORTED)
+    {
+        throw prnn::NotSupported();
+    }
+
     if(status != PRNN_STATUS_SUCCESS)
     {
         throw std::logic_error(std::string("PRNN C interface call returned error: '") +
@@ -523,52 +565,68 @@ void TestCRNN(const Options& options)
 {
     prnnHandle_t handle;
     prnnRNNDescriptor_t descriptor;
-    prnnTensorDescriptor_t inputDescriptor;
+    std::vector<prnnTensorDescriptor_t> inputDescriptors;
+
+    prnn::RecurrentOpsHandle highLevelHandle(options.layerSize,
+        options.miniBatchSize,
+        options.timesteps,
+        options.layers,
+        prnn::RecurrentRectifiedLinear(),
+        options.direction,
+        options.layerType,
+        options.inputType,
+        getBackend(options.backend),
+        0.0);
 
     assertSuccess(prnnCreate(&handle));
 
-    assertSuccess(prnnCreateTensorDescriptor(&inputDescriptor));
-
-    const int inputDimensions[3] = {static_cast<int>(options.layerSize),
-                                    static_cast<int>(options.miniBatchSize),
-                                    static_cast<int>(options.timesteps)};
-
-    const int inputStrides[3]    = {static_cast<int>(1),
+    const int inputDimensions[3] = {static_cast<int>(options.miniBatchSize),
                                     static_cast<int>(options.layerSize),
-                                    static_cast<int>(options.layerSize * options.miniBatchSize)};
+                                    static_cast<int>(1)};
 
-    assertSuccess(prnnSetTensorNdDescriptor(inputDescriptor,
-                                            PRNN_DATA_FLOAT,
-                                            3,
-                                            inputDimensions,
-                                            inputStrides));
+    const int inputStrides[3]    = {static_cast<int>(options.layerSize),
+                                    static_cast<int>(1),
+                                    static_cast<int>(1)};
+
+    for(size_t i = 0; i < options.timesteps; ++i)
+    {
+        inputDescriptors.push_back(nullptr);
+
+        assertSuccess(prnnCreateTensorDescriptor(&inputDescriptors.back()));
+        assertSuccess(prnnSetTensorNdDescriptor(inputDescriptors.back(),
+                                                PRNN_DATA_FLOAT,
+                                                3,
+                                                inputDimensions,
+                                                inputStrides));
+    }
 
     assertSuccess(prnnCreateRNNDescriptor(&descriptor));
 
     assertSuccess(prnnSetRNNDescriptor(descriptor,
                                        options.layerSize,
-                                       options.timesteps,
-                                       1,
+                                       options.layers,
                                        nullptr,
-                                       PRNN_SKIP_INPUT,
-                                       PRNN_UNIDIRECTIONAL,
-                                       PRNN_RNN_RELU,
-                                       PRNN_DATA_FLOAT));
+                                       getInputType(options.inputType),
+                                       getDirection(options.direction),
+                                       getLayerType(options.layerType),
+                                       PRNN_DATA_FLOAT,
+                                       getBackend(highLevelHandle)));
 
     size_t reserveSize = 0;
 
     assertSuccess(prnnGetRNNTrainingReserveSize(handle,
                                                 descriptor,
-                                                &inputDescriptor,
+                                                options.timesteps,
+                                                inputDescriptors.data(),
                                                 &reserveSize));
 
-    assertEqual(reserveSize, 0);
+    assertGreaterThanOrEqual(reserveSize, sizeof(float));
 
     size_t parameterSize = 0;
 
     assertSuccess(prnnGetRNNParamsSize(handle,
                                        descriptor,
-                                       &inputDescriptor,
+                                       inputDescriptors.data(),
                                        &parameterSize));
 
     assertGreaterThanOrEqual(parameterSize,
@@ -578,34 +636,109 @@ void TestCRNN(const Options& options)
 
     assertSuccess(prnnGetRNNWorkspaceSize(handle,
                                           descriptor,
-                                          &inputDescriptor,
+                                          options.timesteps,
+                                          inputDescriptors.data(),
                                           &workspaceSize));
 
     assertGreaterThanOrEqual(workspaceSize, sizeof(float));
 
+    for(auto& inputDescriptor : inputDescriptors)
+    {
+        assertSuccess(prnnDestroyTensorDescriptor(inputDescriptor));
+    }
+
     assertSuccess(prnnDestroyRNNDescriptor(descriptor));
-    assertSuccess(prnnDestroyTensorDescriptor(inputDescriptor));
     assertSuccess(prnnDestroy(handle));
+}
+
+static prnn::matrix::Matrix createWeightsWithCInterface(
+    const prnn::RecurrentOpsHandle& highLevelHandle,
+    const prnn::matrix::Precision& precision)
+{
+    prnnHandle_t handle;
+
+    assertSuccess(prnnCreate(&handle));
+
+    prnnRNNDescriptor_t descriptor;
+
+    assertSuccess(prnnCreateRNNDescriptor(&descriptor));
+
+    assertSuccess(prnnSetRNNDescriptor(descriptor,
+                                       highLevelHandle.layerSize,
+                                       highLevelHandle.layers,
+                                       nullptr,
+                                       getInputType(highLevelHandle.inputMode),
+                                       getDirection(highLevelHandle.direction),
+                                       getLayerType(highLevelHandle.layerType),
+                                       PRNN_DATA_FLOAT,
+                                       getBackend(highLevelHandle)));
+
+    std::vector<prnnTensorDescriptor_t> inputActivationsDescriptors;
+
+    const int inputDimensions[3] = {static_cast<int>(highLevelHandle.miniBatchSize),
+                                    static_cast<int>(highLevelHandle.layerSize),
+                                    static_cast<int>(1)};
+
+    const int inputStrides[3]    = {static_cast<int>(highLevelHandle.layerSize),
+                                    static_cast<int>(1),
+                                    static_cast<int>(1)};
+
+    for(size_t i = 0; i < highLevelHandle.timesteps; ++i)
+    {
+        inputActivationsDescriptors.push_back(nullptr);
+
+        assertSuccess(prnnCreateTensorDescriptor(&inputActivationsDescriptors.back()));
+        assertSuccess(prnnSetTensorNdDescriptor(inputActivationsDescriptors.back(),
+                                                PRNN_DATA_FLOAT,
+                                                3,
+                                                inputDimensions,
+                                                inputStrides));
+    }
+
+    size_t size = 0;
+
+    assertSuccess(prnnGetRNNParamsSize(handle,
+                                       descriptor,
+                                       inputActivationsDescriptors.data(),
+                                       &size));
+
+    for(auto& inputDescriptor : inputActivationsDescriptors)
+    {
+        assertSuccess(prnnDestroyTensorDescriptor(inputDescriptor));
+    }
+
+    assertSuccess(prnnDestroyRNNDescriptor(descriptor));
+    assertSuccess(prnnDestroy(handle));
+
+    return prnn::matrix::randn({size / precision.size(), 1, 1}, precision);
 }
 
 void TestCForwardOps(const Options& options)
 {
     auto precision = prnn::matrix::SinglePrecision();
 
-    prnn::RecurrentOpsHandle highLevelHandle(options.layerSize, options.miniBatchSize,
-        options.timesteps, prnn::RecurrentRectifiedLinear(), options.direction,
-        options.usePersistentForwardProp, 0.0);
+    prnn::RecurrentOpsHandle highLevelHandle(options.layerSize,
+        options.miniBatchSize,
+        options.timesteps,
+        options.layers,
+        prnn::RecurrentRectifiedLinear(),
+        options.direction,
+        options.layerType,
+        options.inputType,
+        getBackend(options.backend),
+        0.0);
 
-    auto weights = rand({options.layerSize, options.layerSize}, precision);
+    auto weights = createWeightsWithCInterface(highLevelHandle, precision);
 
     apply(weights, weights, prnn::matrix::Multiply(1.0e-2));
 
-    auto inputActivations = rand({options.layerSize, options.miniBatchSize, options.timesteps},
+    auto inputActivations = rand({options.layerSize, options.miniBatchSize, options.timesteps, 1},
         precision);
+    auto highLevelReserve = prnn::createReserveRecurrent(highLevelHandle, precision);
 
     auto referenceActivations = copy(inputActivations);
 
-    forwardPropRecurrent(referenceActivations, weights, highLevelHandle);
+    forwardPropRecurrent(referenceActivations, highLevelReserve, weights, highLevelHandle);
 
     prnnHandle_t handle;
 
@@ -617,45 +750,58 @@ void TestCForwardOps(const Options& options)
 
     assertSuccess(prnnSetRNNDescriptor(descriptor,
                                        options.layerSize,
-                                       options.timesteps,
-                                       1,
+                                       options.layers,
                                        nullptr,
-                                       PRNN_SKIP_INPUT,
-                                       PRNN_UNIDIRECTIONAL,
-                                       PRNN_RNN_RELU,
-                                       PRNN_DATA_FLOAT));
+                                       getInputType(options.inputType),
+                                       getDirection(options.direction),
+                                       getLayerType(options.layerType),
+                                       PRNN_DATA_FLOAT,
+                                       getBackend(highLevelHandle)));
 
-    prnnTensorDescriptor_t inputActivationsDescriptor;
+    std::vector<prnnTensorDescriptor_t> inputActivationsDescriptors;
 
-    assertSuccess(prnnCreateTensorDescriptor(&inputActivationsDescriptor));
-
-    const int inputDimensions[3] = {static_cast<int>(options.layerSize),
-                                    static_cast<int>(options.miniBatchSize),
-                                    static_cast<int>(options.timesteps)};
-
-    const int inputStrides[3]    = {static_cast<int>(1),
+    const int inputDimensions[3] = {static_cast<int>(options.miniBatchSize),
                                     static_cast<int>(options.layerSize),
-                                    static_cast<int>(options.layerSize * options.miniBatchSize)};
+                                    static_cast<int>(1)};
 
-    assertSuccess(prnnSetTensorNdDescriptor(inputActivationsDescriptor,
-                                            PRNN_DATA_FLOAT,
-                                            3,
-                                            inputDimensions,
-                                            inputStrides));
+    const int inputStrides[3]    = {static_cast<int>(options.layerSize),
+                                    static_cast<int>(1),
+                                    static_cast<int>(1)};
+
+    for(size_t i = 0; i < options.timesteps; ++i)
+    {
+        inputActivationsDescriptors.push_back(nullptr);
+
+        assertSuccess(prnnCreateTensorDescriptor(&inputActivationsDescriptors.back()));
+        assertSuccess(prnnSetTensorNdDescriptor(inputActivationsDescriptors.back(),
+                                                PRNN_DATA_FLOAT,
+                                                3,
+                                                inputDimensions,
+                                                inputStrides));
+    }
 
     size_t reserveSize = 0;
 
     assertSuccess(prnnGetRNNTrainingReserveSize(handle,
                                                 descriptor,
-                                                &inputActivationsDescriptor,
+                                                options.timesteps,
+                                                inputActivationsDescriptors.data(),
                                                 &reserveSize));
 
     size_t workspaceSize = 0;
 
     assertSuccess(prnnGetRNNWorkspaceSize(handle,
                                           descriptor,
-                                          &inputActivationsDescriptor,
+                                          options.timesteps,
+                                          inputActivationsDescriptors.data(),
                                           &workspaceSize));
+
+    size_t weightsSize = 0;
+
+    assertSuccess(prnnGetRNNParamsSize(handle,
+                                       descriptor,
+                                       inputActivationsDescriptors.data(),
+                                       &weightsSize));
 
     prnn::matrix::Matrix workspace({workspaceSize / precision.size()}, precision);
     prnn::matrix::Matrix reserve({reserveSize / precision.size()}, precision);
@@ -664,29 +810,28 @@ void TestCForwardOps(const Options& options)
 
     assertSuccess(prnnCreateTensorDescriptor(&weightsDescriptor));
 
-    const int weightsDimensions[2] = {static_cast<int>(options.layerSize),
-                                      static_cast<int>(options.layerSize)};
+    const int weightsDimensions[3] = {static_cast<int>(weightsSize / precision.size()), 1, 1};
 
-    const int weightsStrides[2]    = {static_cast<int>(1),
-                                      static_cast<int>(options.layerSize)};
+    const int weightsStrides[3]    = {1, weightsDimensions[0], weightsDimensions[0]};
 
     assertSuccess(prnnSetTensorNdDescriptor(weightsDescriptor,
                                             PRNN_DATA_FLOAT,
-                                            2,
+                                            3,
                                             weightsDimensions,
                                             weightsStrides));
 
     assertSuccess(prnnRNNForward(handle,
                                  descriptor,
-                                 nullptr,
-                                 nullptr,
+                                 highLevelHandle.timesteps,
+                                 inputActivationsDescriptors.data(),
+                                 inputActivations.data(),
                                  nullptr,
                                  nullptr,
                                  nullptr,
                                  nullptr,
                                  weightsDescriptor,
                                  weights.data(),
-                                 &inputActivationsDescriptor,
+                                 inputActivationsDescriptors.data(),
                                  inputActivations.data(),
                                  nullptr,
                                  nullptr,
@@ -699,8 +844,12 @@ void TestCForwardOps(const Options& options)
 
     assertApproximatelyEqual(inputActivations, referenceActivations);
 
-    assertSuccess(prnnDestroyTensorDescriptor(inputActivationsDescriptor));
     assertSuccess(prnnDestroyTensorDescriptor(weightsDescriptor));
+
+    for(auto& inputDescriptor : inputActivationsDescriptors)
+    {
+        assertSuccess(prnnDestroyTensorDescriptor(inputDescriptor));
+    }
 
     assertSuccess(prnnDestroyRNNDescriptor(descriptor));
     assertSuccess(prnnDestroy(handle));
@@ -710,11 +859,19 @@ void TestCDeltaOps(const Options& options)
 {
     auto precision = prnn::matrix::SinglePrecision();
 
-    prnn::RecurrentOpsHandle highLevelHandle(options.layerSize, options.miniBatchSize,
-        options.timesteps, prnn::RecurrentRectifiedLinear(), options.direction,
-        options.usePersistentForwardProp, 0.0);
+    prnn::RecurrentOpsHandle highLevelHandle(options.layerSize,
+        options.miniBatchSize,
+        options.timesteps,
+        options.layers,
+        prnn::RecurrentRectifiedLinear(),
+        options.direction,
+        options.layerType,
+        options.inputType,
+        getBackend(options.backend),
+        0.0);
 
-    auto weights = rand({options.layerSize, options.layerSize}, precision);
+
+    auto weights = createWeightsWithCInterface(highLevelHandle, precision);
 
     apply(weights, weights, prnn::matrix::Multiply(1.0e-2));
 
@@ -722,10 +879,13 @@ void TestCDeltaOps(const Options& options)
         precision);
     auto deltas = rand({options.layerSize, options.miniBatchSize, options.timesteps},
         precision);
+    auto highLevelReserve = prnn::createReserveRecurrent(highLevelHandle, precision);
 
+    zeros(highLevelReserve);
     auto referenceDeltas = copy(deltas);
 
-    backPropDeltasRecurrent(referenceDeltas, weights, inputActivations, highLevelHandle);
+    backPropDeltasRecurrent(referenceDeltas, weights, inputActivations, highLevelReserve,
+        highLevelHandle);
 
     prnnHandle_t handle;
 
@@ -737,81 +897,101 @@ void TestCDeltaOps(const Options& options)
 
     assertSuccess(prnnSetRNNDescriptor(descriptor,
                                        options.layerSize,
-                                       options.timesteps,
-                                       1,
+                                       options.layers,
                                        nullptr,
-                                       PRNN_SKIP_INPUT,
-                                       PRNN_UNIDIRECTIONAL,
-                                       PRNN_RNN_RELU,
-                                       PRNN_DATA_FLOAT));
+                                       getInputType(options.inputType),
+                                       getDirection(options.direction),
+                                       getLayerType(options.layerType),
+                                       PRNN_DATA_FLOAT,
+                                       getBackend(highLevelHandle)));
 
-    prnnTensorDescriptor_t inputActivationsDescriptor;
+    std::vector<prnnTensorDescriptor_t> inputActivationsDescriptors;
 
-    assertSuccess(prnnCreateTensorDescriptor(&inputActivationsDescriptor));
-
-    const int inputDimensions[3] = {static_cast<int>(options.layerSize),
-                                    static_cast<int>(options.miniBatchSize),
-                                    static_cast<int>(options.timesteps)};
-
-    const int inputStrides[3]    = {static_cast<int>(1),
+    const int inputDimensions[3] = {static_cast<int>(options.miniBatchSize),
                                     static_cast<int>(options.layerSize),
-                                    static_cast<int>(options.layerSize * options.miniBatchSize)};
+                                    static_cast<int>(1)};
 
-    assertSuccess(prnnSetTensorNdDescriptor(inputActivationsDescriptor,
-                                            PRNN_DATA_FLOAT,
-                                            3,
-                                            inputDimensions,
-                                            inputStrides));
+    const int inputStrides[3]    = {static_cast<int>(options.layerSize),
+                                    static_cast<int>(1),
+                                    static_cast<int>(1)};
 
-    prnnTensorDescriptor_t deltasDescriptor;
+    for(size_t i = 0; i < options.timesteps; ++i)
+    {
+        inputActivationsDescriptors.push_back(nullptr);
 
-    assertSuccess(prnnCreateTensorDescriptor(&deltasDescriptor));
+        assertSuccess(prnnCreateTensorDescriptor(&inputActivationsDescriptors.back()));
+        assertSuccess(prnnSetTensorNdDescriptor(inputActivationsDescriptors.back(),
+                                                PRNN_DATA_FLOAT,
+                                                3,
+                                                inputDimensions,
+                                                inputStrides));
+    }
 
-    assertSuccess(prnnSetTensorNdDescriptor(deltasDescriptor,
-                                            PRNN_DATA_FLOAT,
-                                            3,
-                                            inputDimensions,
-                                            inputStrides));
+    std::vector<prnnTensorDescriptor_t> deltasDescriptors;
+
+    for(size_t i = 0; i < options.timesteps; ++i)
+    {
+        deltasDescriptors.push_back(nullptr);
+
+        assertSuccess(prnnCreateTensorDescriptor(&deltasDescriptors.back()));
+        assertSuccess(prnnSetTensorNdDescriptor(deltasDescriptors.back(),
+                                                PRNN_DATA_FLOAT,
+                                                3,
+                                                inputDimensions,
+                                                inputStrides));
+    }
 
     size_t reserveSize = 0;
 
     assertSuccess(prnnGetRNNTrainingReserveSize(handle,
                                                 descriptor,
-                                                &inputActivationsDescriptor,
+                                                options.timesteps,
+                                                inputActivationsDescriptors.data(),
                                                 &reserveSize));
 
     size_t workspaceSize = 0;
 
     assertSuccess(prnnGetRNNWorkspaceSize(handle,
                                           descriptor,
-                                          &inputActivationsDescriptor,
+                                          options.timesteps,
+                                          inputActivationsDescriptors.data(),
                                           &workspaceSize));
+
+    size_t weightsSize = 0;
+
+    assertSuccess(prnnGetRNNParamsSize(handle,
+                                       descriptor,
+                                       inputActivationsDescriptors.data(),
+                                       &weightsSize));
 
     prnn::matrix::Matrix workspace({workspaceSize / precision.size()}, precision);
     prnn::matrix::Matrix reserve({reserveSize / precision.size()}, precision);
+
+    zeros(reserve);
 
     prnnTensorDescriptor_t weightsDescriptor;
 
     assertSuccess(prnnCreateTensorDescriptor(&weightsDescriptor));
 
-    const int weightsDimensions[2] = {static_cast<int>(options.layerSize),
-                                      static_cast<int>(options.layerSize)};
+    const int weightsDimensions[3] = {static_cast<int>(weightsSize / precision.size()), 1, 1};
 
-    const int weightsStrides[2]    = {static_cast<int>(1),
-                                      static_cast<int>(options.layerSize)};
+    const int weightsStrides[3]    = {1, weightsDimensions[0], weightsDimensions[0]};
 
     assertSuccess(prnnSetTensorNdDescriptor(weightsDescriptor,
                                             PRNN_DATA_FLOAT,
-                                            2,
+                                            3,
                                             weightsDimensions,
                                             weightsStrides));
 
+    auto outputDeltas = copy(deltas);
+
     assertSuccess(prnnRNNBackwardData(handle,
                                       descriptor,
-                                      &inputActivationsDescriptor,
+                                      options.timesteps,
+                                      inputActivationsDescriptors.data(),
                                       inputActivations.data(),
-                                      &deltasDescriptor,
-                                      deltas.data(),
+                                      deltasDescriptors.data(),
+                                      outputDeltas.data(),
                                       nullptr,
                                       nullptr,
                                       nullptr,
@@ -822,7 +1002,7 @@ void TestCDeltaOps(const Options& options)
                                       nullptr,
                                       nullptr,
                                       nullptr,
-                                      &deltasDescriptor,
+                                      deltasDescriptors.data(),
                                       deltas.data(),
                                       nullptr,
                                       nullptr,
@@ -835,8 +1015,16 @@ void TestCDeltaOps(const Options& options)
 
     assertApproximatelyEqual(referenceDeltas, deltas);
 
-    assertSuccess(prnnDestroyTensorDescriptor(inputActivationsDescriptor));
-    assertSuccess(prnnDestroyTensorDescriptor(deltasDescriptor));
+    for(auto& inputDescriptor : inputActivationsDescriptors)
+    {
+        assertSuccess(prnnDestroyTensorDescriptor(inputDescriptor));
+    }
+
+    for(auto& deltasDescriptor : deltasDescriptors)
+    {
+        assertSuccess(prnnDestroyTensorDescriptor(deltasDescriptor));
+    }
+
     assertSuccess(prnnDestroyTensorDescriptor(weightsDescriptor));
 
     assertSuccess(prnnDestroyRNNDescriptor(descriptor));
@@ -847,20 +1035,31 @@ void TestCGradientOps(const Options& options)
 {
     auto precision = prnn::matrix::SinglePrecision();
 
-    prnn::RecurrentOpsHandle highLevelHandle(options.layerSize, options.miniBatchSize,
-        options.timesteps, prnn::RecurrentRectifiedLinear(), options.direction,
-        options.usePersistentForwardProp, 0.0);
+    prnn::RecurrentOpsHandle highLevelHandle(options.layerSize,
+        options.miniBatchSize,
+        options.timesteps,
+        options.layers,
+        prnn::RecurrentRectifiedLinear(),
+        options.direction,
+        options.layerType,
+        options.inputType,
+        getBackend(options.backend),
+        0.0);
 
-    auto dWeights = ones({options.layerSize, options.layerSize}, precision);
+    auto dWeights = createWeightsWithCInterface(highLevelHandle, precision);
 
     auto inputActivations = rand({options.layerSize, options.miniBatchSize, options.timesteps},
         precision);
-    auto deltas = rand({options.layerSize, options.miniBatchSize, options.timesteps},
+    auto outputActivations = rand({options.layerSize, options.miniBatchSize, options.timesteps},
         precision);
+    auto highLevelReserve = prnn::createReserveRecurrent(highLevelHandle, precision);
+
+    rand(highLevelReserve);
 
     auto referenceDWeights = copy(dWeights);
 
-    backPropGradientsRecurrent(referenceDWeights, inputActivations, deltas, highLevelHandle);
+    backPropGradientsRecurrent(referenceDWeights, inputActivations, outputActivations,
+        highLevelReserve, highLevelHandle);
 
     prnnHandle_t handle;
 
@@ -872,83 +1071,104 @@ void TestCGradientOps(const Options& options)
 
     assertSuccess(prnnSetRNNDescriptor(descriptor,
                                        options.layerSize,
-                                       options.timesteps,
-                                       1,
+                                       options.layers,
                                        nullptr,
-                                       PRNN_SKIP_INPUT,
-                                       PRNN_UNIDIRECTIONAL,
-                                       PRNN_RNN_RELU,
-                                       PRNN_DATA_FLOAT));
+                                       getInputType(options.inputType),
+                                       getDirection(options.direction),
+                                       getLayerType(options.layerType),
+                                       PRNN_DATA_FLOAT,
+                                       getBackend(highLevelHandle)));
 
-    prnnTensorDescriptor_t inputActivationsDescriptor;
+    std::vector<prnnTensorDescriptor_t> inputActivationsDescriptors;
 
-    assertSuccess(prnnCreateTensorDescriptor(&inputActivationsDescriptor));
-
-    const int inputDimensions[3] = {static_cast<int>(options.layerSize),
-                                    static_cast<int>(options.miniBatchSize),
-                                    static_cast<int>(options.timesteps)};
-
-    const int inputStrides[3]    = {static_cast<int>(1),
+    const int inputDimensions[3] = {static_cast<int>(options.miniBatchSize),
                                     static_cast<int>(options.layerSize),
-                                    static_cast<int>(options.layerSize * options.miniBatchSize)};
+                                    static_cast<int>(1)};
 
-    assertSuccess(prnnSetTensorNdDescriptor(inputActivationsDescriptor,
-                                            PRNN_DATA_FLOAT,
-                                            3,
-                                            inputDimensions,
-                                            inputStrides));
+    const int inputStrides[3]    = {static_cast<int>(options.layerSize),
+                                    static_cast<int>(1),
+                                    static_cast<int>(1)};
 
-    prnnTensorDescriptor_t deltasDescriptor;
+    for(size_t i = 0; i < options.timesteps; ++i)
+    {
+        inputActivationsDescriptors.push_back(nullptr);
 
-    assertSuccess(prnnCreateTensorDescriptor(&deltasDescriptor));
+        assertSuccess(prnnCreateTensorDescriptor(&inputActivationsDescriptors.back()));
+        assertSuccess(prnnSetTensorNdDescriptor(inputActivationsDescriptors.back(),
+                                                PRNN_DATA_FLOAT,
+                                                3,
+                                                inputDimensions,
+                                                inputStrides));
+    }
 
-    assertSuccess(prnnSetTensorNdDescriptor(deltasDescriptor,
-                                            PRNN_DATA_FLOAT,
-                                            3,
-                                            inputDimensions,
-                                            inputStrides));
+    std::vector<prnnTensorDescriptor_t> outputActivationsDescriptors;
+
+    for(size_t i = 0; i < options.timesteps; ++i)
+    {
+        outputActivationsDescriptors.push_back(nullptr);
+
+        assertSuccess(prnnCreateTensorDescriptor(&outputActivationsDescriptors.back()));
+        assertSuccess(prnnSetTensorNdDescriptor(outputActivationsDescriptors.back(),
+                                                PRNN_DATA_FLOAT,
+                                                3,
+                                                inputDimensions,
+                                                inputStrides));
+    }
 
     size_t reserveSize = 0;
 
     assertSuccess(prnnGetRNNTrainingReserveSize(handle,
                                                 descriptor,
-                                                &inputActivationsDescriptor,
+                                                options.timesteps,
+                                                inputActivationsDescriptors.data(),
                                                 &reserveSize));
 
     size_t workspaceSize = 0;
 
     assertSuccess(prnnGetRNNWorkspaceSize(handle,
                                           descriptor,
-                                          &inputActivationsDescriptor,
+                                          options.timesteps,
+                                          inputActivationsDescriptors.data(),
                                           &workspaceSize));
+
+    size_t weightsSize = 0;
+
+    assertSuccess(prnnGetRNNParamsSize(handle,
+                                       descriptor,
+                                       inputActivationsDescriptors.data(),
+                                       &weightsSize));
+
 
     prnn::matrix::Matrix workspace({workspaceSize / precision.size()}, precision);
     prnn::matrix::Matrix reserve({reserveSize / precision.size()}, precision);
+
+    assertEqual(reserve.size().product(), highLevelReserve.size().product());
+
+    copy(reserve, highLevelReserve);
 
     prnnTensorDescriptor_t dWeightsDescriptor;
 
     assertSuccess(prnnCreateTensorDescriptor(&dWeightsDescriptor));
 
-    const int weightsDimensions[2] = {static_cast<int>(options.layerSize),
-                                      static_cast<int>(options.layerSize)};
+    const int weightsDimensions[3] = {static_cast<int>(weightsSize / precision.size()), 1, 1};
 
-    const int weightsStrides[2]    = {static_cast<int>(1),
-                                      static_cast<int>(options.layerSize)};
+    const int weightsStrides[3]    = {1, weightsDimensions[0], weightsDimensions[0]};
 
     assertSuccess(prnnSetTensorNdDescriptor(dWeightsDescriptor,
                                             PRNN_DATA_FLOAT,
-                                            2,
+                                            3,
                                             weightsDimensions,
                                             weightsStrides));
 
     assertSuccess(prnnRNNBackwardWeights(handle,
                                          descriptor,
-                                         &inputActivationsDescriptor,
+                                         options.timesteps,
+                                         inputActivationsDescriptors.data(),
                                          inputActivations.data(),
                                          nullptr,
                                          nullptr,
-                                         &deltasDescriptor,
-                                         deltas.data(),
+                                         outputActivationsDescriptors.data(),
+                                         outputActivations.data(),
                                          workspace.data(),
                                          workspaceSize,
                                          dWeightsDescriptor,
@@ -958,8 +1178,16 @@ void TestCGradientOps(const Options& options)
 
     assertApproximatelyEqual(referenceDWeights, dWeights);
 
-    assertSuccess(prnnDestroyTensorDescriptor(inputActivationsDescriptor));
-    assertSuccess(prnnDestroyTensorDescriptor(deltasDescriptor));
+    for(auto& inputDescriptor : inputActivationsDescriptors)
+    {
+        assertSuccess(prnnDestroyTensorDescriptor(inputDescriptor));
+    }
+
+    for(auto& outputActivationDescriptor : outputActivationsDescriptors)
+    {
+        assertSuccess(prnnDestroyTensorDescriptor(outputActivationDescriptor));
+    }
+
     assertSuccess(prnnDestroyTensorDescriptor(dWeightsDescriptor));
 
     assertSuccess(prnnDestroyRNNDescriptor(descriptor));
@@ -979,11 +1207,177 @@ void RunTest(const std::string& testName, void (*function)(const Options& option
         function(options);
         std::cout << "Test '" << testName << "' Passed\n";
     }
+    catch(prnn::NotSupported& e)
+    {
+        if(options.allowNotSupported)
+        {
+            std::cout << "Test '" << testName << "' is known to be not supported.\n";
+        }
+        else
+        {
+            std::cout << "Test '" << testName << "' is supposed to be supported.\n";
+            options.failed = true;
+        }
+    }
     catch(std::exception& e)
     {
         std::cout << "Test '" << testName << "' Failed with error '" << e.what() << "'\n";
         options.failed = true;
     }
+}
+
+bool isPersistentBackendSelected(const Options& options)
+{
+    return prnn::RECURRENT_PERSISTENT_BACKEND ==
+        prnn::getBackend(prnn::RecurrentOpsHandle(options.layerSize,
+            options.miniBatchSize,
+            options.timesteps,
+            options.layers,
+            prnn::RecurrentRectifiedLinear(),
+            options.direction,
+            options.layerType,
+            options.inputType,
+            getBackend(options.backend),
+            0.0), prnn::matrix::SinglePrecision());
+}
+
+bool isCudnnSupported(const Options& options)
+{
+    return prnn::isCudnnBackendSupported(prnn::RecurrentOpsHandle(options.layerSize,
+            options.miniBatchSize,
+            options.timesteps,
+            options.layers,
+            prnn::RecurrentRectifiedLinear(),
+            options.direction,
+            options.layerType,
+            options.inputType,
+            getBackend(options.backend),
+            0.0), prnn::matrix::SinglePrecision());
+}
+
+std::vector<Options> getSweepRange(const Options& initialOptions)
+{
+    if(!initialOptions.runSweep)
+    {
+        return {initialOptions};
+    }
+
+    std::vector<Options> range;
+
+    auto layerSizes = {512, 2, 192};
+    auto miniBatchSizes = {7, 1};
+    auto timesteps = {2, 13};
+    auto inputTypes = {prnn::RECURRENT_SKIP_INPUT, prnn::RECURRENT_LINEAR_INPUT};
+    auto directions = {prnn::RECURRENT_FORWARD};
+    auto scales = {0.0, 0.5};
+    auto layerTypes = {prnn::RECURRENT_LSTM_TYPE, prnn::RECURRENT_GRU_TYPE,
+        prnn::RECURRENT_SIMPLE_TYPE};
+
+    Options options = initialOptions;
+
+    for(auto& layerType : layerTypes)
+    {
+        options.layerType = layerType;
+
+        for(auto& direction : directions)
+        {
+            options.direction = direction;
+
+            for(auto& inputType : inputTypes)
+            {
+                options.inputType = inputType;
+
+                for(auto& layerSize : layerSizes)
+                {
+                    options.layerSize = layerSize;
+
+                    for(auto& timestep : timesteps)
+                    {
+                        options.timesteps = timestep;
+
+                        for(auto& miniBatchSize : miniBatchSizes)
+                        {
+                            options.miniBatchSize = miniBatchSize;
+
+                            for(auto& scale : scales)
+                            {
+                                options.skipConnectionScale = scale;
+
+                                options.allowNotSupported = false;
+
+                                if(!isCudnnSupported(options) &&
+                                    layerType != prnn::RECURRENT_SIMPLE_TYPE)
+                                {
+                                    options.allowNotSupported = true;
+                                }
+
+                                if(inputType == prnn::RECURRENT_SKIP_INPUT &&
+                                    !isPersistentBackendSelected(options))
+                                {
+                                    break;
+                                }
+
+                                if(inputType == prnn::RECURRENT_LINEAR_INPUT &&
+                                    scale != 0.0)
+                                {
+                                    break;
+                                }
+
+                                if(inputType == prnn::RECURRENT_LINEAR_INPUT)
+                                {
+                                    options.allowNotSupported = true;
+                                }
+
+
+                                range.push_back(options);
+                                range.back().backend = "best";
+
+                                options.allowNotSupported = true;
+
+                                range.push_back(options);
+                                range.back().backend = "cudnn";
+
+                                range.push_back(options);
+                                range.back().backend = "persistent";
+
+                                if(layerType != prnn::RECURRENT_SIMPLE_TYPE)
+                                {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    return range;
+}
+
+void runSweep(const Options& initialOptions)
+{
+    auto allOptions = getSweepRange(initialOptions);
+
+    for(auto& options : allOptions)
+    {
+        std::cout << "Running tests for " << options.toString() << "\n";
+
+        RunTest("C Interface Tensor Test",       TestCTensor,                   options);
+        RunTest("C Interface RNN Test",          TestCRNN,                      options);
+        RunTest("C Interface Forward Ops Test",  TestCForwardOps,               options);
+        RunTest("C Interface Delta Ops Test",    TestCDeltaOps,                 options);
+        RunTest("C Interface Gradient Ops Test", TestCGradientOps,              options);
+        RunTest("Simple Recurrent Ops Test",     TestSimpleRecurrentOps,        options);
+        RunTest("Recurrent Ops Gradient Check",  TestRecurrentOpsGradientCheck, options);
+
+        if(options.failed && options.haltOnFailure)
+        {
+            return;
+        }
+    }
+
+    std::cout << "All Tests Passed\n";
 }
 
 int main(int argc, char** argv)
@@ -994,29 +1388,34 @@ int main(int argc, char** argv)
 
     Options options;
 
-    options.layerSize = prnn::rnn::getMaximumSizeRNNForThisGPU(precision);
-    options.timesteps = 10;
-    options.verbose   = false;
-    options.epsilon   = 1.0e-3;
-
+    options.layerSize     = prnn::rnn::getMaximumSizeRNNForThisGPU(precision);
     options.miniBatchSize = 3;
-    options.gradientCheckSamples = 32;
+    options.timesteps     = 10;
+    options.layers        = 1;
+    options.verbose       = false;
+    options.epsilon       = 1.0e-3;
+    options.inputType     = prnn::RECURRENT_SKIP_INPUT;
+    options.layerType     = prnn::RECURRENT_SIMPLE_TYPE;
+    options.direction     = prnn::RECURRENT_FORWARD;
 
-    options.usePersistentBackProp = true;
-    options.usePersistentForwardProp = true;
+    options.gradientCheckSamples = 8;
 
     options.haltOnFailure = true;
 
-    options.specificSample = "0,0";
+    options.specificSample = "0";
     options.skipConnectionScale = 0.5;
+
+    options.backend = "best";
+
+    options.runSweep = true;
 
     parser.parse("-t", "--timeteps",   options.timesteps,     options.timesteps,     "The number of timesteps to run the RNN for.");
     parser.parse("-b", "--mini-batch", options.miniBatchSize, options.miniBatchSize, "The mini-batch size to run through the layer.");
     parser.parse("-l", "--layer-size", options.layerSize,     options.layerSize,     "The size of the RNN layer to operate on.");
+    parser.parse("-n", "--layers",     options.layers,        options.layers,        "The number of RNN layers to stack.");
     parser.parse("-e", "--epsilon",    options.epsilon,       options.epsilon,       "Epsilon used for the gradient check.");
 
-    parser.parse("", "--persistent-back",    options.usePersistentBackProp,    options.usePersistentBackProp,    "Use persistent kernels for back prop.");
-    parser.parse("", "--persistent-forward", options.usePersistentForwardProp, options.usePersistentForwardProp, "Use persistent kernels for forward prop.");
+    parser.parse("", "--backend", options.backend, options.backend, "Select the backend to test.");
 
     parser.parse("", "--specific-sample", options.specificSample, options.specificSample, "Specific weight to sample.");
     parser.parse("", "--skip-connection-scale", options.skipConnectionScale, options.skipConnectionScale, "Scaling factor for skip connections.");
@@ -1027,6 +1426,9 @@ int main(int argc, char** argv)
     parser.parse("", "--halt-on-failure", options.haltOnFailure,
         options.haltOnFailure, "Abort on the first test failure.");
 
+    parser.parse("", "--no-sweep", options.runSweep,
+        options.runSweep, "Don't run a sweep over all tests.");
+
     parser.parse("-v", "--verbose", options.verbose, options.verbose, "Enable all PRNN logs.");
 
     parser.parse();
@@ -1036,18 +1438,9 @@ int main(int argc, char** argv)
         prnn::util::enable_all_logs();
     }
 
-    RunTest("C Interface Tensor Test",              TestCTensor,                          options);
-    RunTest("C Interface RNN Test",                 TestCRNN,                             options);
-    RunTest("C Interface Forward Ops Test",         TestCForwardOps,                      options);
-    RunTest("C Interface Delta Ops Test",           TestCDeltaOps,                        options);
-    RunTest("C Interface Gradient Ops Test",        TestCGradientOps,                     options);
-    RunTest("Recurrent Forward Ops Gradient Check", TestRecurrentOpsGradientCheck,        options);
-    RunTest("Simple Recurrent Ops Test",            TestSimpleRecurrentOps,               options);
-    //RunTest("Recurrent Reverse Ops Gradient Check", TestReverseRecurrentOpsGradientCheck, options);
+    runSweep(options);
 
     return 0;
 }
-
-
 
 

@@ -4,10 +4,13 @@
 
 #include <prnn/detail/matrix/matrix_view.h>
 #include <prnn/detail/matrix/matrix_operations.h>
+#include <prnn/detail/matrix/copy_operations.h>
 #include <prnn/detail/matrix/blas_operations.h>
 #include <prnn/detail/matrix/operation.h>
+#include <prnn/detail/matrix/cudnn_library.h>
 
 #include <prnn/detail/parallel/cuda.h>
+#include <prnn/detail/parallel/synchronization.h>
 
 #include <prnn/detail/util/metaprogramming.h>
 #include <prnn/detail/util/logger.h>
@@ -15,6 +18,7 @@
 #include <prnn/detail/rnn/recurrent_ops_config.h>
 #include <prnn/detail/rnn/recurrent_ops_handle.h>
 #include <prnn/detail/rnn/recurrent_ops_kernels.h>
+#include <prnn/detail/rnn/cudnn_ops.h>
 
 namespace prnn
 {
@@ -29,25 +33,25 @@ template<RecurrentLayerDirection direction, typename T, size_t sms, size_t smMaj
 class TileSelector
 {
 public:
-    //typedef TileConfig<1, 192, 192, 192, 288, 6, 36, direction, T> TileSize;
-    typedef TileConfig<1, 8, 8, 4, 4, 2, 4, direction, T> TileSize;
+    typedef TileConfig<4, 384, 384, 192, 288, 6, 36, direction, T> TileSize;
+    //typedef TileConfig<1, 8, 8, 4, 4, 2, 4, direction, T> TileSize;
 
 };
 
 #if CUDA_ARCH_MAJOR == 6
 
 template<RecurrentLayerDirection direction, typename T>
-class TileSelector<direction, T, 60, 6>
+class TileSelector<direction, T, 56, 6>
 {
 public:
-    typedef TileConfig<60, 1820, 1820, 96, 96, 12, 12, direction, T> TileSize;
+    typedef TileConfig<56, 1792, 1792, 224, 256, 7, 32, direction, T> TileSize;
 };
 
 template<RecurrentLayerDirection direction>
-class TileSelector<direction, float16, 60, 6>
+class TileSelector<direction, float16, 56, 6>
 {
 public:
-    typedef TileConfig<60, 2720, 2720, 352, 352, 22, 22, direction, T> TileSize;
+    typedef TileConfig<56, 2432, 2560, 352, 320, 11, 16, direction, T> TileSize;
 };
 
 #endif
@@ -86,23 +90,23 @@ public:
             if(precision == matrix::HalfPrecision())
             {
                 maxSize = TileSelector<prnn::RECURRENT_FORWARD,
-                    float16, 60, 6>::TileSize::GRID_TILE_ROWS;
+                    float16, 56, 6>::TileSize::MAXIMUM_LAYER_SIZE;
             }
             else
             {
                 maxSize = TileSelector<prnn::RECURRENT_FORWARD,
-                    float, 60, 6>::TileSize::GRID_TILE_ROWS;
+                    float, 56, 6>::TileSize::MAXIMUM_LAYER_SIZE;
             }
         }
         else if(streamingMultiprocessorVersionMajor == 5 && streamingMultiprocessorCount >= 24)
         {
             maxSize = TileSelector<prnn::RECURRENT_FORWARD,
-                float, 24, 5>::TileSize::GRID_TILE_ROWS;
+                float, 24, 5>::TileSize::MAXIMUM_LAYER_SIZE;
         }
         else
         {
             maxSize = TileSelector<prnn::RECURRENT_FORWARD,
-                float, 1, 0>::TileSize::GRID_TILE_ROWS;
+                float, 1, 0>::TileSize::MAXIMUM_LAYER_SIZE;
         }
 
         util::log("RecurrentOperations") << "major " << streamingMultiprocessorVersionMajor
@@ -121,24 +125,29 @@ public:
             if(precision == matrix::HalfPrecision())
             {
                 maxSize = TileSelector<prnn::RECURRENT_FORWARD,
-                    float16, 60, 6>::TileSize::EXPANDED_GRID_TILE_ROWS;
+                    float16, 56, 6>::TileSize::EXPANDED_LAYER_SIZE;
             }
             else
             {
                 maxSize = TileSelector<prnn::RECURRENT_FORWARD,
-                    float, 60, 6>::TileSize::EXPANDED_GRID_TILE_ROWS;
+                    float, 56, 6>::TileSize::EXPANDED_LAYER_SIZE;
             }
         }
         else if(streamingMultiprocessorVersionMajor == 5 && streamingMultiprocessorCount >= 24)
         {
             maxSize = TileSelector<prnn::RECURRENT_FORWARD,
-                float, 24, 5>::TileSize::EXPANDED_GRID_TILE_ROWS;
+                float, 24, 5>::TileSize::EXPANDED_LAYER_SIZE;
         }
         else
         {
             maxSize = TileSelector<prnn::RECURRENT_FORWARD,
-                float, 1, 0>::TileSize::EXPANDED_GRID_TILE_ROWS;
+                float, 1, 0>::TileSize::EXPANDED_LAYER_SIZE;
         }
+
+        util::log("RecurrentOperations") << "major " << streamingMultiprocessorVersionMajor
+            << ", minor " << streamingMultiprocessorVersionMinor << ", sms "
+            << streamingMultiprocessorCount << ", scratch size per timestep is "
+            << maxSize << "\n";
 
         return maxSize;
     }
@@ -219,7 +228,7 @@ void dispatchForwardPropRecurrent(typename ArchitectureConfig::RealType* activat
     util::log("RecurrentOperations") << "Launch forward propagation with "
         << archParameters.block_count() << " blocks ("
         << archParameters.threads().x << " x " << archParameters.threads().y
-        << " threads), each handling "
+        << " threads, in stream " << archParameters.handle.stream << "), each handling "
         << archParameters.activations_per_block() << " activations out of "
         << activationCount << " total, mini batch size " << miniBatchSize << ", timesteps "
         << timesteps << ".\n";
@@ -446,21 +455,41 @@ void genericForwardPropRecurrent(
 
 void forwardPropRecurrent(
     const matrix::DynamicView& activations,
+    const matrix::ConstDynamicView& inputActivations,
     const matrix::ConstDynamicView& weights,
-    const matrix::DynamicView& scratch, const RecurrentOpsHandle& handle)
+    const matrix::DynamicView& scratch,
+    const matrix::DynamicView& reserve,
+    const RecurrentOpsHandle& handle)
 {
-    if(!parallel::isCudaEnabled() || !handle.allowPersistentKernels)
-    {
-        detail::genericForwardPropRecurrent(activations, weights, handle);
-        return;
-    }
-
     assert(activations.precision() == weights.precision());
     assert(activations.precision() == scratch.precision());
+    assert(activations.precision() == reserve.precision());
 
-    zeros(scratch);
+    auto backend = getBackendThrowOnError(handle, activations.precision());
 
-    detail::forwardPropRecurrentOverActivationFunctions(activations, weights, scratch, handle);
+    if(backend == RECURRENT_CUDNN_BACKEND)
+    {
+        parallel::setNotSynchronized();
+
+        cudnnForwardPropRecurrent(activations, inputActivations,
+            weights, scratch, reserve, handle);
+    }
+    else if(backend == RECURRENT_PERSISTENT_BACKEND)
+    {
+        zeros(scratch);
+
+        copy(activations, inputActivations);
+
+        detail::forwardPropRecurrentOverActivationFunctions(activations,
+            reshape(weights, {handle.layerSize, handle.layerSize}), scratch, handle);
+    }
+    else
+    {
+        copy(activations, inputActivations);
+
+        detail::genericForwardPropRecurrent(activations,
+            reshape(weights, {handle.layerSize, handle.layerSize}), handle);
+    }
 }
 
 namespace detail
@@ -713,26 +742,53 @@ void genericBackPropDeltasRecurrent(const matrix::DynamicView& deltas,
 
 }
 
-void backPropDeltasRecurrent(const matrix::DynamicView& deltas,
-    const matrix::ConstDynamicView& weights, const matrix::ConstDynamicView& activations,
-    const matrix::DynamicView& scratch, const RecurrentOpsHandle& handle)
+void backPropDeltasRecurrent(const matrix::DynamicView& inputDeltas,
+    const matrix::ConstDynamicView& weights,
+    const matrix::ConstDynamicView& outputActivations,
+    const matrix::ConstDynamicView& outputDeltas,
+    const matrix::DynamicView& scratch,
+    const matrix::DynamicView& reserve,
+    const RecurrentOpsHandle& handle)
 {
-    if(!parallel::isCudaEnabled() || !handle.allowPersistentKernels)
+    auto backend = getBackendThrowOnError(handle, weights.precision());
+
+    if(backend == RECURRENT_CUDNN_BACKEND)
     {
-        detail::genericBackPropDeltasRecurrent(deltas, weights, activations, handle);
-        return;
+        parallel::setNotSynchronized();
+
+        cudnnBackPropDeltasRecurrent(inputDeltas, weights, outputActivations, outputDeltas,
+            scratch, reserve, handle);
     }
+    else if(backend == RECURRENT_PERSISTENT_BACKEND)
+    {
+        zeros(scratch);
 
-    zeros(scratch);
+        copy(inputDeltas, outputDeltas);
 
-    detail::backPropDeltasRecurrentOverActivationFunctions(deltas, weights, activations,
-        scratch, handle);
+        detail::backPropDeltasRecurrentOverActivationFunctions(inputDeltas,
+            reshape(weights, {handle.layerSize, handle.layerSize}),
+            outputActivations, scratch, handle);
+
+        copy(reserve, inputDeltas);
+    }
+    else
+    {
+        copy(inputDeltas, outputDeltas);
+
+        detail::genericBackPropDeltasRecurrent(inputDeltas,
+            reshape(weights, {handle.layerSize, handle.layerSize}), outputActivations, handle);
+
+        copy(reserve, inputDeltas);
+    }
 }
+
+namespace detail
+{
 
 void backPropGradientsRecurrent(const matrix::DynamicView& dWeights,
     const matrix::ConstDynamicView& outputActivations,
     const matrix::ConstDynamicView& deltas,
-    const matrix::ConstDynamicView& scratch, const RecurrentOpsHandle& handle)
+    const RecurrentOpsHandle& handle)
 {
     bool reversed = (handle.direction == prnn::RECURRENT_REVERSE);
 
@@ -760,6 +816,35 @@ void backPropGradientsRecurrent(const matrix::DynamicView& dWeights,
 
 }
 
+} // namespace detail
+
+void backPropGradientsRecurrent(const matrix::DynamicView& dWeights,
+    const matrix::ConstDynamicView& inputActivations,
+    const matrix::ConstDynamicView& outputActivations,
+    const matrix::ConstDynamicView& scratch,
+    const matrix::ConstDynamicView& reserve,
+    const RecurrentOpsHandle& handle)
+{
+    auto backend = getBackendThrowOnError(handle, dWeights.precision());
+
+    if(backend == RECURRENT_CUDNN_BACKEND)
+    {
+        zeros(dWeights);
+
+        parallel::setNotSynchronized();
+
+        cudnnBackPropGradientsRecurrent(dWeights, inputActivations,
+            outputActivations, scratch, reserve, handle);
+    }
+    else
+    {
+        detail::backPropGradientsRecurrent(
+            reshape(dWeights, getWeightDimensions(handle, dWeights.precision())),
+            outputActivations,
+            reshape(reserve, {handle.layerSize, handle.miniBatchSize, handle.timesteps}), handle);
+    }
+}
+
 static matrix::Dimension extendDimensions(const matrix::Dimension& dimensions,
     const matrix::Precision& precision)
 {
@@ -771,24 +856,103 @@ static matrix::Dimension extendDimensions(const matrix::Dimension& dimensions,
     return newDimensions;
 }
 
+static matrix::Dimension getForwardPropScratchDimensions(const RecurrentOpsHandle& handle,
+    const matrix::Precision& precision)
+{
+    matrix::Dimension scratchDimension;
+
+    auto backend = getBackendThrowOnError(handle, precision);
+
+    if(backend == RECURRENT_CUDNN_BACKEND)
+    {
+        scratchDimension = {cudnnGetScratchSize(handle, precision) / precision.size()};
+    }
+    else
+    {
+        matrix::Dimension dimension(handle.layerSize, handle.miniBatchSize, handle.timesteps);
+
+        scratchDimension = extendDimensions(dimension, precision);
+    }
+
+    return scratchDimension;
+}
+
 matrix::Matrix getForwardPropScratch(const RecurrentOpsHandle& handle,
     const matrix::Precision& precision)
 {
-    matrix::Dimension dimension(handle.layerSize, handle.miniBatchSize, handle.timesteps);
-
-    auto scratchDimension = extendDimensions(dimension, precision);
-
-    return matrix::Matrix(scratchDimension, precision);
+    return matrix::Matrix(getForwardPropScratchDimensions(handle, precision), precision);
 }
 
 size_t getForwardPropScratchSize(const RecurrentOpsHandle& handle,
     const matrix::Precision& precision)
 {
-    matrix::Dimension dimension(handle.layerSize, handle.miniBatchSize, handle.timesteps);
+    return getForwardPropScratchDimensions(handle, precision).product() * precision.size();
+}
 
-    auto scratchDimension = extendDimensions(dimension, precision);
+matrix::Dimension getReserveDimensions(const RecurrentOpsHandle& handle,
+    const matrix::Precision& precision)
+{
+    matrix::Dimension size;
 
-    return precision.size() * dimension.product();
+    auto backend = getBackendThrowOnError(handle, precision);
+
+    if(backend == RECURRENT_CUDNN_BACKEND)
+    {
+        size.push_back(cudnnGetReserveSize(handle, precision) / precision.size());
+    }
+    else
+    {
+        size = {handle.layerSize, handle.miniBatchSize, handle.timesteps};
+    }
+
+    return size;
+}
+
+matrix::Dimension getWeightDimensions(const RecurrentOpsHandle& handle,
+    const matrix::Precision& precision)
+{
+    matrix::Dimension size;
+
+    auto backend = getBackendThrowOnError(handle, precision);
+
+    if(backend == RECURRENT_CUDNN_BACKEND)
+    {
+        size.push_back(cudnnGetWeightsSize(handle, precision) / precision.size());
+        size.push_back(1);
+        size.push_back(1);
+    }
+    else
+    {
+        size = {handle.layerSize, handle.layerSize};
+    }
+
+    return size;
+}
+
+void getWeightsRange(matrix::Dimension& begin, matrix::Dimension& end,
+    const RecurrentOpsHandle& handle, const matrix::Precision& precision,
+    int index)
+{
+    begin.clear();
+    end.clear();
+
+    auto backend = getBackendThrowOnError(handle, precision);
+
+    if(backend == RECURRENT_CUDNN_BACKEND)
+    {
+        begin.push_back(cudnnGetWeightsBegin(handle, precision, index));
+        begin.push_back(0);
+        begin.push_back(0);
+
+        end.push_back(cudnnGetWeightsEnd(handle, precision, index));
+        end.push_back(1);
+        end.push_back(1);
+    }
+    else
+    {
+        begin = {0, 0};
+        end   = {handle.layerSize, handle.layerSize};
+    }
 }
 
 matrix::Matrix getBackPropDeltasScratch(const RecurrentOpsHandle& handle,
@@ -806,13 +970,13 @@ size_t getBackPropDeltasScratchSize(const RecurrentOpsHandle& handle,
 matrix::Matrix getBackPropGradientsScratch(const RecurrentOpsHandle& handle,
     const matrix::Precision& precision)
 {
-    return matrix::Matrix();
+    return getForwardPropScratch(handle, precision);
 }
 
 size_t getBackPropGradientsScratchSize(const RecurrentOpsHandle& handle,
     const matrix::Precision& precision)
 {
-    return 0;
+    return getForwardPropScratchSize(handle, precision);
 }
 
 }
