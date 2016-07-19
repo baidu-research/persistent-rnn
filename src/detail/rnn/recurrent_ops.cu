@@ -33,7 +33,7 @@ template<RecurrentLayerDirection direction, typename T, size_t sms, size_t smMaj
 class TileSelector
 {
 public:
-    typedef TileConfig<1, 192, 192, 192, 288, 6, 36, direction, T> TileSize;
+    typedef TileConfig<4, 384, 384, 192, 288, 6, 36, direction, T> TileSize;
     //typedef TileConfig<1, 8, 8, 4, 4, 2, 4, direction, T> TileSize;
 
 };

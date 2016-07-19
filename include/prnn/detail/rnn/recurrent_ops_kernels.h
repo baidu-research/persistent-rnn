@@ -6,7 +6,7 @@
 
 #include <prnn/detail/util/atomics.h>
 
-#define DEBUG_RECURRENT_OPS 0
+#define DEBUG_RECURRENT_OPS 1
 #define ATOMIC_INCREMENT 1
 #define USE_BARRIER 1
 #define SHOULD_SPIN 1
@@ -14,14 +14,15 @@
 #define REDUCE_ACCUMULATORS 1
 #define REDUCE_ADDRESS_MATH 1
 #define BARRIER_ALWAYS_FAILS 0
+#define WAIT_FOREVER 0
 
 #if DEBUG_RECURRENT_OPS
 
-#define dprintf(...) do { if( blockIdx.x == 0  ) \
+#define dprintf(...) do { if( true ) \
     { std::printf(__VA_ARGS__); } } while(0)
 
 #define t0printf(...) do { if(threadIdx.x == 0 && (threadIdx.y == 0) && \
-    blockIdx.x == 0 ) { std::printf(__VA_ARGS__); } } while(0)
+    true ) { std::printf(__VA_ARGS__); } } while(0)
 
 #define UNROLL
 
@@ -1138,7 +1139,11 @@ private:
         DataLoadingBuffer& data_buffer)
     {
         #if USE_BARRIER
+        #if WAIT_FOREVER
+        for(index_t i = 0; true; ++i)
+        #else
         for(index_t i = 0; i < Config::BARRIER_WAIT_COUNT; ++i)
+        #endif
         {
             external_load_input(register_state, shared_state, data_buffer);
 
@@ -1776,15 +1781,14 @@ private:
         index_t threadId = 2 * getLinearThreadId();
 
         index_t threadOffset = threadId;
-
-        index_t offset = blockOffset + threadOffset;
         #else
         RealType* outputBuffer = register_state.activation_scratch;
-        index_t offset = 0;
+        index_t threadOffset = 0;
+        index_t blockOffset = 0;
         index_t bufferOffset;
         #endif
 
-        atomic_increment(outputBuffer, register_state, accumulators, offset, bufferOffset);
+        atomic_increment(outputBuffer, register_state, accumulators, blockOffset, threadOffset, bufferOffset);
     }
 
     __device__ void store_accumulators_back_prop(RegisterState& register_state,
@@ -1803,30 +1807,29 @@ private:
         index_t threadId = 2 * getLinearThreadId();
 
         index_t threadOffset = threadId;
-
-        index_t offset = blockOffset + threadOffset;
         #else
         RealType* outputBuffer = register_state.activation_scratch;
-        index_t offset = 0;
+        index_t threadOffset = 0;
+        index_t blockOffset = 0;
         index_t bufferOffset = 0;
         #endif
 
-        atomic_increment(outputBuffer, register_state, accumulators, offset, bufferOffset);
+        atomic_increment(outputBuffer, register_state, accumulators, blockOffset, threadOffset, bufferOffset);
     }
 
     __device__ void atomic_increment(RealType* output_pointer,
         RegisterState& register_state,
-        ThreadTileOutputAccumulators& accumulators, index_t threadOffset, index_t bufferOffset) {
+        ThreadTileOutputAccumulators& accumulators, index_t blockOffset, index_t threadOffset, index_t bufferOffset) {
 
         #if ATOMIC_INCREMENT
         UNROLL
         for (index_t row = 0; row < Config::OUTPUTS_PER_THREAD; row += 1)
         {
             index_t offsetInLayer = threadOffset + row * 2 * Config::THREADS_PER_BLOCK;
+            index_t offset = offsetInLayer + blockOffset + bufferOffset;
 
-            bool condition = offsetInLayer < register_state.expanded_layer_size;
-
-            index_t offset = offsetInLayer + bufferOffset;
+            bool condition = offset < register_state.expanded_layer_size &&
+                offsetInLayer < Config::EXPANDED_BLOCK_TILE_ROWS;
 
             #if DEBUG_RECURRENT_OPS
             if(condition)
