@@ -10,8 +10,8 @@ def mkdir(name):
 		os.mkdir(name)
 
 if ARGUMENTS.get('mode', 'debug') == 'release':
-	mkdir('.release_build')
-	SConscript('SConscript', variant_dir='.release_build', duplicate=0,
+	mkdir('release_build')
+	SConscript('SConscript', variant_dir='release_build', duplicate=0,
 		exports={'mode':'release'})
 else:
 	mkdir('.debug_build')
